@@ -1,7 +1,7 @@
 //! cgroup v2 support for limiting the CPU and memory available to a layer.
 //!
 //! Layers with resource limits get a cgroup at
-//! /sys/fs/cgroup/layer/<uid>-<name>. The layer's PID 1 is started in that
+//! /sys/fs/cgroup/devlayer/<uid>-<name>. The layer's PID 1 is started in that
 //! cgroup, which also makes it the root of the layer's cgroup namespace, and
 //! every process that later joins the layer is moved into it.
 

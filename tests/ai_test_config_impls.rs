@@ -93,7 +93,7 @@ fn test_config_file_locations() -> Result<()> {
     layer.no_sudo = true;
 
     // Test that layer looks for config in the right places
-    // 1. .layer.toml in current directory
+    // 1. .devlayer.toml in current directory
     let test_dir = format!("generated-test-data/{}", layer.name);
     fs::create_dir_all(&test_dir)?;
     let local_config = format!("{}/.devlayer.toml", test_dir);

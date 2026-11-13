@@ -648,7 +648,7 @@ config/*.data.bak
     Ok(())
 }
 
-/// Verify that the LAYER_IGNORED environment variable enables inclusion of
+/// Verify that the DEVLAYER_IGNORED environment variable enables inclusion of
 /// ignored files even when the --ignored CLI flag is not provided.
 #[rstest]
 fn test_env_flag_includes_ignored(mut layer: LayerManager) -> Result<()> {
@@ -696,7 +696,7 @@ fn test_env_flag_includes_ignored(mut layer: LayerManager) -> Result<()> {
     assert!(stdout.contains(ignored_file.to_str().unwrap()));
     assert!(stdout.contains(included_file.to_str().unwrap()));
 
-    // Invalid value for LAYER_IGNORED
+    // Invalid value for DEVLAYER_IGNORED
     layer.set_ignored(false); // Disable automatic --ignored
     let result =
         layer.run_with_env(&["status", &test_dir], "DEVLAYER_IGNORED", "cow");
@@ -706,7 +706,7 @@ fn test_env_flag_includes_ignored(mut layer: LayerManager) -> Result<()> {
         "Expected error for invalid DEVLAYER_IGNORED value"
     );
 
-    // False value for LAYER_IGNORED
+    // False value for DEVLAYER_IGNORED
     layer.set_ignored(false); // Disable automatic --ignored
     layer.run_with_env(&["status", &test_dir], "DEVLAYER_IGNORED", "false")?;
     let stdout = layer.last_stdout.clone();

@@ -41,7 +41,7 @@ fn limits_available(layer: &mut LayerManager) -> bool {
 /// Finds our layer's cgroup on the host, if it has one
 fn host_cgroup(layer: &LayerManager) -> Option<PathBuf> {
     let suffix = format!("-{}", layer.name);
-    fs::read_dir("/sys/fs/cgroup/layer")
+    fs::read_dir("/sys/fs/cgroup/devlayer")
         .ok()?
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())

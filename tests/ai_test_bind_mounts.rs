@@ -147,7 +147,7 @@ fn test_no_default_binds_env(mut layer: LayerManager) -> Result<()> {
     assert!(layer.last_stdout.contains(&test1));
     assert!(!layer.last_stdout.contains("/dev/fuse"));
 
-    // Test that LAYER_NO_DEFAULT_BINDS=false (or any other value) doesn't disable defaults
+    // Test that DEVLAYER_NO_DEFAULT_BINDS=false (or any other value) doesn't disable defaults
     layer.run_with_env(
         &["--no-config", "config"],
         "DEVLAYER_NO_DEFAULT_BINDS",

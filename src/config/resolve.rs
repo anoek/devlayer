@@ -818,11 +818,11 @@ fn find_config_files() -> Result<Vec<PathBuf>> {
         }
     }
 
-    // ~/.config/layer/config.toml
+    // ~/.config/devlayer/config.toml
     paths_to_check.push(uid_gid_home.home.join(".config/devlayer/config.conf"));
     paths_to_check.push(uid_gid_home.home.join(".config/devlayer/config.toml"));
 
-    // /etc/layer.conf
+    // /etc/devlayer.conf
     paths_to_check.push(PathBuf::from("/etc/devlayer.conf"));
     paths_to_check.push(PathBuf::from("/etc/devlayer.toml"));
 
