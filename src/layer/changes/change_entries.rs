@@ -25,7 +25,7 @@ pub enum EntryOperation {
     Error(ChangeError),
 }
 
-/// A ChangeEntry is a single change that has been detected in the sandbox.
+/// A ChangeEntry is a single change that has been detected in the layer.
 #[derive(Debug, Clone)]
 pub struct ChangeEntry {
     /// The destination path of the change. This may or may not exist yet.

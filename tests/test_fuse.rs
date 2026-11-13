@@ -5,7 +5,7 @@ use fixtures::*;
 use rstest::*;
 
 #[rstest]
-fn test_disable_fuse(mut sandbox: SandboxManager) -> Result<()> {
-    assert!(sandbox.xfail(&["--bind-fuse=false", "ls", "-l", "/dev/fuse"]));
+fn test_disable_fuse(mut layer: LayerManager) -> Result<()> {
+    assert!(layer.xfail(&["--bind-fuse=false", "ls", "-l", "/dev/fuse"]));
     Ok(())
 }

@@ -1,4 +1,4 @@
-// Integration tests for SandboxSettings
+// Integration tests for LayerSettings
 // These tests verify that settings serialization, validation, and file operations work correctly
 
 mod fixtures;
@@ -9,17 +9,17 @@ use rstest::*;
 use serde_json;
 use std::{fs, path::PathBuf};
 
-use ::sandbox::config::{BindMount, BindMountOptions, Network};
-use ::sandbox::sandbox::{SandboxSettings, mount_overlays::MountHash};
+use ::devlayer::config::{BindMount, BindMountOptions, Network};
+use ::devlayer::layer::{LayerSettings, mount_overlays::MountHash};
 use std::collections::HashMap;
 
 // Helper to create a minimal Config for testing
-fn create_test_config() -> ::sandbox::config::Config {
-    ::sandbox::config::Config {
+fn create_test_config() -> ::devlayer::config::Config {
+    ::devlayer::config::Config {
         log_level: log::LevelFilter::Info,
         name: "test_layer".to_string(),
         storage_dir: PathBuf::from("/tmp/test_storage"),
-        sandbox_dir: PathBuf::from("/tmp/test_layer"),
+        layer_dir: PathBuf::from("/tmp/test_layer"),
         upper_cwd: PathBuf::from("/tmp/test_upper"),
         overlay_cwd: PathBuf::from("/tmp/test_overlay"),
         net: Network::None,
@@ -52,7 +52,7 @@ fn test_from_config() -> Result<()> {
         dir: "/test/dir".to_string(),
     }];
 
-    let settings = SandboxSettings::from_config(&config, &mounts);
+    let settings = LayerSettings::from_config(&config, &mounts);
 
     assert_eq!(settings.version, env!("CARGO_PKG_VERSION"));
     assert_eq!(settings.mounts, mounts);
@@ -81,7 +81,7 @@ fn test_user_bind_mounts_filtering_through_validation() -> Result<()> {
     };
 
     config.bind_mounts = vec![user_bind.clone(), data_bind.clone()];
-    let settings = SandboxSettings::from_config(&config, &[]);
+    let settings = LayerSettings::from_config(&config, &[]);
 
     // Test that "data" bind mount is filtered out by trying validation with only data bind
     let mut config_with_data_only = create_test_config();
@@ -100,8 +100,8 @@ fn test_user_bind_mounts_filtering_through_validation() -> Result<()> {
 
 #[rstest]
 fn test_save_and_load_from_file() -> Result<()> {
-    let sandbox = SandboxManager::new();
-    let test_dir = format!("generated-test-data/settings-{}", sandbox.name);
+    let layer = LayerManager::new();
+    let test_dir = format!("generated-test-data/settings-{}", layer.name);
     fs::create_dir_all(&test_dir)?;
     let settings_path = PathBuf::from(format!("{}/settings.json", test_dir));
 
@@ -127,7 +127,7 @@ fn test_save_and_load_from_file() -> Result<()> {
         },
     ];
 
-    let original_settings = SandboxSettings::from_config(&config, &mounts);
+    let original_settings = LayerSettings::from_config(&config, &mounts);
 
     // Test save_to_file
     original_settings.save_to_file(&settings_path)?;
@@ -138,7 +138,7 @@ fn test_save_and_load_from_file() -> Result<()> {
     let _: serde_json::Value = serde_json::from_str(&file_content)?; // Verify it's valid JSON
 
     // Test load_from_file
-    let loaded_settings = SandboxSettings::load_from_file(&settings_path)?;
+    let loaded_settings = LayerSettings::load_from_file(&settings_path)?;
 
     assert_eq!(loaded_settings, original_settings);
     assert_eq!(loaded_settings.network, Network::None);
@@ -153,7 +153,7 @@ fn test_save_and_load_from_file() -> Result<()> {
 fn test_load_from_nonexistent_file() -> Result<()> {
     let nonexistent_path = PathBuf::from("/nonexistent/path/settings.json");
 
-    let result = SandboxSettings::load_from_file(&nonexistent_path);
+    let result = LayerSettings::load_from_file(&nonexistent_path);
 
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
@@ -164,15 +164,15 @@ fn test_load_from_nonexistent_file() -> Result<()> {
 
 #[rstest]
 fn test_load_from_invalid_json_file() -> Result<()> {
-    let sandbox = SandboxManager::new();
-    let test_dir = format!("generated-test-data/invalid-json-{}", sandbox.name);
+    let layer = LayerManager::new();
+    let test_dir = format!("generated-test-data/invalid-json-{}", layer.name);
     fs::create_dir_all(&test_dir)?;
     let settings_path = PathBuf::from(format!("{}/invalid.json", test_dir));
 
     // Write invalid JSON
     fs::write(&settings_path, "{ invalid json }")?;
 
-    let result = SandboxSettings::load_from_file(&settings_path);
+    let result = LayerSettings::load_from_file(&settings_path);
 
     assert!(result.is_err());
     let error_msg = result.unwrap_err().to_string();
@@ -184,7 +184,7 @@ fn test_load_from_invalid_json_file() -> Result<()> {
 #[rstest]
 fn test_save_to_invalid_path() -> Result<()> {
     let config = create_test_config();
-    let settings = SandboxSettings::from_config(&config, &[]);
+    let settings = LayerSettings::from_config(&config, &[]);
 
     let invalid_path = PathBuf::from("/nonexistent/directory/settings.json");
 
@@ -215,7 +215,7 @@ fn test_validate_against_config_identical() -> Result<()> {
         dir: "/test/dir".to_string(),
     }];
 
-    let settings = SandboxSettings::from_config(&config, &mounts);
+    let settings = LayerSettings::from_config(&config, &mounts);
 
     // Validation against the same config should succeed
     let result = settings.validate_against_config(&config, &mounts);
@@ -234,7 +234,7 @@ fn test_validate_against_config_network_change() -> Result<()> {
         dir: "/test/dir".to_string(),
     }];
 
-    let settings = SandboxSettings::from_config(&original_config, &mounts);
+    let settings = LayerSettings::from_config(&original_config, &mounts);
 
     // Change network configuration
     let mut new_config = original_config.clone();
@@ -270,7 +270,7 @@ fn test_validate_against_config_mounts_removed() -> Result<()> {
         },
     ];
 
-    let settings = SandboxSettings::from_config(&config, &original_mounts);
+    let settings = LayerSettings::from_config(&config, &original_mounts);
 
     // Remove one mount
     let new_mounts = vec![MountHash {
@@ -303,7 +303,7 @@ fn test_validate_against_config_mounts_added() -> Result<()> {
         dir: "/dir1".to_string(),
     }];
 
-    let settings = SandboxSettings::from_config(&config, &original_mounts);
+    let settings = LayerSettings::from_config(&config, &original_mounts);
 
     // Add another mount
     let new_mounts = vec![
@@ -348,7 +348,7 @@ fn test_validate_against_config_bind_mounts_removed() -> Result<()> {
 
     original_config.bind_mounts = vec![bind1.clone(), bind2];
 
-    let settings = SandboxSettings::from_config(&original_config, &[]);
+    let settings = LayerSettings::from_config(&original_config, &[]);
 
     // Remove one bind mount
     let mut new_config = original_config.clone();
@@ -381,7 +381,7 @@ fn test_validate_against_config_bind_mounts_added() -> Result<()> {
 
     original_config.bind_mounts = vec![bind1.clone()];
 
-    let settings = SandboxSettings::from_config(&original_config, &[]);
+    let settings = LayerSettings::from_config(&original_config, &[]);
 
     // Add another bind mount
     let bind2 = BindMount {
@@ -425,7 +425,7 @@ fn test_validate_against_config_data_bind_mount_ignored() -> Result<()> {
 
     original_config.bind_mounts = vec![user_bind.clone(), data_bind.clone()];
 
-    let settings = SandboxSettings::from_config(&original_config, &[]);
+    let settings = LayerSettings::from_config(&original_config, &[]);
 
     // New config has only the data bind mount (user bind removed)
     let mut new_config = original_config.clone();
@@ -469,7 +469,7 @@ fn test_validate_against_config_multiple_changes() -> Result<()> {
 
     let original_mounts = vec![mount1, mount2];
     let settings =
-        SandboxSettings::from_config(&original_config, &original_mounts);
+        LayerSettings::from_config(&original_config, &original_mounts);
 
     // Change everything
     let mut new_config = original_config.clone();

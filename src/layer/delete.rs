@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 
-use crate::{actions::rmdir_recursive, sandbox::Sandbox};
+use crate::{actions::rmdir_recursive, layer::Layer};
 use anyhow::{Context, Result};
 use log::{debug, trace};
 
-impl Sandbox {
+impl Layer {
     pub fn delete(&self) -> Result<()> {
         self.stop().context("failed to stop layer")?;
         self.unmount().context("failed to unmount layer")?;

@@ -1,6 +1,6 @@
 use crate::config::Config;
-use crate::sandbox::Sandbox;
-use crate::sandbox::changes::*;
+use crate::layer::Layer;
+use crate::layer::changes::*;
 use crate::util::find_mount_point;
 use anyhow::Context;
 use anyhow::Result;
@@ -44,7 +44,7 @@ const BUILT_IN_IGNORE_PATTERNS: &[&str] = &[
     "**/.git",
 ];
 
-impl Sandbox {
+impl Layer {
     /**
      * This function will walk the upper directory and create a list of changes that have been
      * made. It will return a vector of ChangeEntry structs that can be used to apply the changes.

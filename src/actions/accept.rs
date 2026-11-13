@@ -1,5 +1,5 @@
 /*
-= Sandbox Acceptance Algorithm
+= Layer Acceptance Algorithm
 
 ==  Notes on OverlayFS
 
@@ -37,7 +37,7 @@
 -   We have separate OverlayFS mounts that correspond to each normal mount on the
     system. For example, if we have three partitions, one for `/`, one for `/home`,
     and one for `/var`, we have three OverlayFS mounts, one for each. Wherever
-    we store our sandbox changes we will have three directories, `upper`, `work`,
+    we store our layer changes we will have three directories, `upper`, `work`,
     and `overlay`, each will have a corresponding base32 encoded directory of the
     mount point name, so `F4` for `/`, `F5UG63LF` for `/home`, and so forth.
 
@@ -100,11 +100,11 @@ Once we have a change set we can apply it.
       to its final destination.
 */
 
+use crate::layer::changes::changes::{by_destination, by_reverse_source};
+use crate::layer::changes::{ChangeEntries, EntryOperation, FileDetails};
 use crate::outln;
-use crate::sandbox::changes::changes::{by_destination, by_reverse_source};
-use crate::sandbox::changes::{ChangeEntries, EntryOperation, FileDetails};
 use crate::util::{find_mount_point, sync_and_drop_caches};
-use crate::{config::Config, sandbox::Sandbox};
+use crate::{config::Config, layer::Layer};
 use anyhow::{Context, Result};
 use colored::*;
 use log::{debug, error, trace};
@@ -114,16 +114,16 @@ use nix::unistd::{Gid, Uid, fchownat};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/* The accept function will accept the changes from the sandbox into the real filesystem. */
+/* The accept function will accept the changes from the layer into the real filesystem. */
 pub fn accept(
     config: &Config,
-    sandbox: &Sandbox,
+    layer: &Layer,
     patterns: &[String],
 ) -> Result<()> {
-    trace!("Accepting changes from layer {}", sandbox.name);
+    trace!("Accepting changes from layer {}", layer.name);
 
     let cwd = std::env::current_dir()?;
-    let all_changes = sandbox.changes(config)?;
+    let all_changes = layer.changes(config)?;
 
     let mut changes = all_changes.matching(&cwd, patterns);
     let non_matching_count =

@@ -206,8 +206,8 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         partial_config.name = Some(name);
         sources.insert("name".into(), "cli --new".into());
     } else if cli.last {
-        // Find the most recently created sandbox
-        let name = find_last_sandbox(
+        // Find the most recently created layer
+        let name = find_last_layer(
             &partial_config.storage_dir,
             uid_gid_home.uid,
             uid_gid_home.gid,
@@ -304,7 +304,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("memory".into(), "default".into());
     }
 
-    let storage_dir = resolve_sandbox_storage_dir(
+    let storage_dir = resolve_storage_dir(
         partial_config.storage_dir,
         uid_gid_home.uid,
         uid_gid_home.gid,
@@ -313,9 +313,9 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("storage_dir".into(), "default".into());
     }
 
-    let sandbox_dir = storage_dir.join(name.clone());
-    if !sources.contains_key("sandbox_dir") {
-        sources.insert("sandbox_dir".into(), "derived from storage_dir".into());
+    let layer_dir = storage_dir.join(name.clone());
+    if !sources.contains_key("layer_dir") {
+        sources.insert("layer_dir".into(), "derived from storage_dir".into());
     }
 
     let cwd = std::env::current_dir()?;
@@ -387,7 +387,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         name,
         net,
         storage_dir,
-        sandbox_dir,
+        layer_dir,
         upper_cwd,
         overlay_cwd,
         log_level: partial_config.log_level.unwrap_or(log::LevelFilter::Info),
@@ -495,7 +495,7 @@ fn get_audio_bind_mounts() -> Vec<String> {
     audio_binds
 }
 
-pub fn resolve_sandbox_storage_dir(
+pub fn resolve_storage_dir(
     storage_dir: Option<String>,
     uid: Uid,
     gid: Gid,
@@ -702,11 +702,11 @@ fn find_config_files() -> Result<Vec<PathBuf>> {
         }
     }
 
-    // ~/.config/sandbox/config.toml
+    // ~/.config/layer/config.toml
     paths_to_check.push(uid_gid_home.home.join(".config/devlayer/config.conf"));
     paths_to_check.push(uid_gid_home.home.join(".config/devlayer/config.toml"));
 
-    // /etc/sandbox.conf
+    // /etc/layer.conf
     paths_to_check.push(PathBuf::from("/etc/devlayer.conf"));
     paths_to_check.push(PathBuf::from("/etc/devlayer.toml"));
 
@@ -798,8 +798,7 @@ fn generate_timestamp_name(
     uid: Uid,
     gid: Gid,
 ) -> Result<String> {
-    let storage_dir =
-        resolve_sandbox_storage_dir(storage_dir.clone(), uid, gid)?;
+    let storage_dir = resolve_storage_dir(storage_dir.clone(), uid, gid)?;
 
     #[cfg(feature = "coverage")]
     let mut iter = 0;
@@ -810,8 +809,8 @@ fn generate_timestamp_name(
             format!("ephemeral_{}", now.format("%Y-%m-%d_%H-%M-%S"));
 
         // Check if this name already exists
-        let sandbox_path = storage_dir.join(&base_name);
-        if !sandbox_path.exists() {
+        let layer_path = storage_dir.join(&base_name);
+        if !layer_path.exists() {
             return Ok(base_name);
         }
 
@@ -827,8 +826,8 @@ fn generate_timestamp_name(
                 name_with_ms
             };
 
-        let sandbox_path_ms = storage_dir.join(&name_with_ms);
-        if !sandbox_path_ms.exists() {
+        let layer_path_ms = storage_dir.join(&name_with_ms);
+        if !layer_path_ms.exists() {
             return Ok(name_with_ms);
         }
 
@@ -842,26 +841,25 @@ fn generate_timestamp_name(
     }
 }
 
-fn find_last_sandbox(
+fn find_last_layer(
     storage_dir: &Option<String>,
     uid: Uid,
     gid: Gid,
 ) -> Result<String> {
-    let storage_dir =
-        resolve_sandbox_storage_dir(storage_dir.clone(), uid, gid)?;
+    let storage_dir = resolve_storage_dir(storage_dir.clone(), uid, gid)?;
 
     let entries = std::fs::read_dir(&storage_dir).context(format!(
         "Failed to read layer storage directory: {:?}",
         storage_dir
     ))?;
 
-    let mut sandboxes: Vec<(String, SystemTime)> = Vec::new();
+    let mut layers: Vec<(String, SystemTime)> = Vec::new();
 
     for entry in entries {
         let entry = entry?;
         let path = entry.path();
 
-        // Check if this is a valid sandbox directory
+        // Check if this is a valid layer directory
         if path.is_dir()
             && path.join("upper").is_dir()
             && path.join("work").is_dir()
@@ -873,25 +871,25 @@ fn find_last_sandbox(
                 .created()
                 .or_else(|_| metadata.modified())
                 .context("Failed to get creation time for layer")?;
-            sandboxes.push((name, created));
+            layers.push((name, created));
         }
     }
 
     #[cfg(feature = "coverage")]
-    let mut sandboxes = if std::env::var_os("TEST_LAST_IS_EMPTY").is_some() {
+    let mut layers = if std::env::var_os("TEST_LAST_IS_EMPTY").is_some() {
         vec![]
     } else {
-        sandboxes
+        layers
     };
 
-    if sandboxes.is_empty() {
+    if layers.is_empty() {
         return Err(anyhow::anyhow!("No layers found"));
     }
 
     // Sort by creation time (newest first)
-    sandboxes.sort_by(|a, b| b.1.cmp(&a.1));
+    layers.sort_by(|a, b| b.1.cmp(&a.1));
 
-    Ok(sandboxes[0].0.clone())
+    Ok(layers[0].0.clone())
 }
 
 #[cfg(test)]
@@ -961,7 +959,7 @@ mod tests {
         let mut config = Config {
             name: "test-layer".to_string(),
             storage_dir: PathBuf::from("/tmp/test"),
-            sandbox_dir: PathBuf::from("/tmp/test"),
+            layer_dir: PathBuf::from("/tmp/test"),
             upper_cwd: PathBuf::from("/tmp/test"),
             overlay_cwd: PathBuf::from("/tmp/test"),
             net: Network::Host,

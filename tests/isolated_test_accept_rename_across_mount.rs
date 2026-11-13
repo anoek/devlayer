@@ -17,9 +17,9 @@ use std::{path::Path, process::Command};
  */
 
 #[rstest]
-fn test_accept_rename_across_mount(mut sandbox: SandboxManager) -> Result<()> {
+fn test_accept_rename_across_mount(mut layer: LayerManager) -> Result<()> {
     let dest_host_dir = "/delete-me-this-is-a-devlayer-coverage-test-dir-for-rename-across-mount";
-    let dir_to_move = sandbox.test_filename("dir_to_move");
+    let dir_to_move = layer.test_filename("dir_to_move");
     Command::new("sudo")
         .arg("mkdir")
         .arg(dest_host_dir)
@@ -42,7 +42,7 @@ fn test_accept_rename_across_mount(mut sandbox: SandboxManager) -> Result<()> {
 
     let path = Path::new(&dir_to_move);
     let dest_path = Path::new(&dest_host_dir);
-    sandbox.run(&["mv", &dir_to_move, dest_host_dir])?;
+    layer.run(&["mv", &dir_to_move, dest_host_dir])?;
     assert!(path.exists());
     assert!(dest_path.exists());
 
@@ -50,7 +50,7 @@ fn test_accept_rename_across_mount(mut sandbox: SandboxManager) -> Result<()> {
     // relative change it will not accept it
     let cwd = std::env::current_dir()?;
     chdir("/")?;
-    assert!(sandbox.pass(&["accept", &dir_to_move]));
+    assert!(layer.pass(&["accept", &dir_to_move]));
     chdir(&cwd)?; // restore for cleanup
 
     Command::new("sudo")

@@ -6,16 +6,16 @@ use rstest::*;
 use std::{io::Write, process::Command, thread::sleep, time::Duration};
 
 /* This test needs to be the only test in this file since it
- * kills all running sandboxes, which would interfere with other
+ * kills all running layers, which would interfere with other
  * tests that were running in parallel. */
 
 #[rstest]
 #[ignore = "Ignoring as this will stop non test layers"]
 fn test_stop_all() -> Result<()> {
-    let mut sandbox1 = sandbox();
-    let mut sandbox2 = sandbox();
-    let mut c1 = sandbox1.run_in_background(&["sleep", "9897135"])?;
-    let mut c2 = sandbox2.run_in_background(&["sleep", "9897135"])?;
+    let mut layer1 = layer();
+    let mut layer2 = layer();
+    let mut c1 = layer1.run_in_background(&["sleep", "9897135"])?;
+    let mut c2 = layer2.run_in_background(&["sleep", "9897135"])?;
 
     // ensure they start up
     let mut ok = false;
@@ -26,7 +26,7 @@ fn test_stop_all() -> Result<()> {
         let lines: Vec<&str> = ps_output
             .lines()
             .filter(|line| {
-                // excluding --name excludes the sandbox binary call lines
+                // excluding --name excludes the layer binary call lines
                 line.contains("sleep 9897135") && !line.contains("--name")
             })
             .collect();
@@ -57,7 +57,7 @@ fn test_stop_all() -> Result<()> {
 
     assert!(lines.len() == 2);
 
-    assert!(sandbox1.pass(&["stop", "--all"]));
+    assert!(layer1.pass(&["stop", "--all"]));
     c1.wait()?;
 
     let ps = Command::new("ps").arg("aux").output()?;
@@ -70,6 +70,6 @@ fn test_stop_all() -> Result<()> {
         .collect();
     assert!(lines.is_empty());
 
-    c2.wait()?; // if this doesn't hang, then the sandbox was killed!
+    c2.wait()?; // if this doesn't hang, then the layer was killed!
     Ok(())
 }

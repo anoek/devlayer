@@ -8,28 +8,28 @@ use std::os::unix::fs::MetadataExt;
 use std::{fs::create_dir, path::Path};
 
 #[rstest]
-fn test_accept_file(mut sandbox: SandboxManager) -> Result<()> {
-    let filename = sandbox.test_filename("file");
+fn test_accept_file(mut layer: LayerManager) -> Result<()> {
+    let filename = layer.test_filename("file");
     let path = Path::new(&filename);
-    sandbox.run(&["touch", &filename])?;
+    layer.run(&["touch", &filename])?;
     assert!(!path.exists());
-    sandbox.run(&["accept", &filename])?;
-    assert!(sandbox.last_stdout.contains("1 changes accepted"));
+    layer.run(&["accept", &filename])?;
+    assert!(layer.last_stdout.contains("1 changes accepted"));
     assert!(path.exists());
     std::fs::remove_file(path)?;
     assert!(!path.exists());
-    sandbox.run(&["accept", &filename])?;
+    layer.run(&["accept", &filename])?;
     assert!(!path.exists());
     Ok(())
 }
 
 #[rstest]
-fn test_accept_directory(mut sandbox: SandboxManager) -> Result<()> {
-    let dirname = sandbox.test_filename("dir");
+fn test_accept_directory(mut layer: LayerManager) -> Result<()> {
+    let dirname = layer.test_filename("dir");
     let path = Path::new(&dirname);
-    sandbox.run(&["mkdir", &dirname])?;
+    layer.run(&["mkdir", &dirname])?;
     assert!(!path.exists());
-    sandbox.run(&["accept", &dirname])?;
+    layer.run(&["accept", &dirname])?;
     assert!(path.exists());
     std::fs::remove_dir(path)?;
     assert!(!path.exists());
@@ -37,11 +37,11 @@ fn test_accept_directory(mut sandbox: SandboxManager) -> Result<()> {
 }
 
 #[rstest]
-fn test_accept_symlink(mut sandbox: SandboxManager) -> Result<()> {
-    let dirname = sandbox.test_filename("test-dir");
-    let symlink = sandbox.test_filename("test-symlink");
-    sandbox.run(&["mkdir", &dirname])?;
-    sandbox.run(&[
+fn test_accept_symlink(mut layer: LayerManager) -> Result<()> {
+    let dirname = layer.test_filename("test-dir");
+    let symlink = layer.test_filename("test-symlink");
+    layer.run(&["mkdir", &dirname])?;
+    layer.run(&[
         "ln",
         "-s",
         Path::new(&dirname).file_name().unwrap().to_str().unwrap(),
@@ -49,7 +49,7 @@ fn test_accept_symlink(mut sandbox: SandboxManager) -> Result<()> {
     ])?;
     assert!(!Path::new(&dirname).exists());
     assert!(!Path::new(&symlink).exists());
-    sandbox.run(&["accept", "**/test-*"])?;
+    layer.run(&["accept", "**/test-*"])?;
     assert!(Path::new(&dirname).exists());
     assert!(Path::new(&symlink).exists());
     std::fs::remove_dir(Path::new(&dirname))?;
@@ -58,9 +58,9 @@ fn test_accept_symlink(mut sandbox: SandboxManager) -> Result<()> {
 }
 
 #[rstest]
-fn test_accept_rename_file(mut sandbox: SandboxManager) -> Result<()> {
-    let filename = sandbox.test_filename("test-file");
-    let new_filename = sandbox.test_filename("test-file-new");
+fn test_accept_rename_file(mut layer: LayerManager) -> Result<()> {
+    let filename = layer.test_filename("test-file");
+    let new_filename = layer.test_filename("test-file-new");
     let path = Path::new(&filename);
     let new_path = Path::new(&new_filename);
     assert!(!path.exists());
@@ -68,10 +68,10 @@ fn test_accept_rename_file(mut sandbox: SandboxManager) -> Result<()> {
     std::fs::write(path, "test")?;
     assert!(path.exists());
     assert!(!new_path.exists());
-    sandbox.run(&["mv", &filename, &new_filename])?;
+    layer.run(&["mv", &filename, &new_filename])?;
     assert!(path.exists());
     assert!(!new_path.exists());
-    sandbox.run(&["accept"])?;
+    layer.run(&["accept"])?;
     assert!(!path.exists());
     assert!(new_path.exists());
     Ok(())
@@ -79,13 +79,13 @@ fn test_accept_rename_file(mut sandbox: SandboxManager) -> Result<()> {
 
 #[rstest]
 fn test_accept_check_ownership_and_permissions(
-    mut sandbox: SandboxManager,
+    mut layer: LayerManager,
 ) -> Result<()> {
-    let filename = sandbox.test_filename("test-file");
-    sandbox.run(&["touch", &filename])?;
+    let filename = layer.test_filename("test-file");
+    layer.run(&["touch", &filename])?;
     assert!(!Path::new(&filename).exists());
-    sandbox.run(&["chmod", "664", &filename])?;
-    sandbox.run(&["accept", &filename])?;
+    layer.run(&["chmod", "664", &filename])?;
+    layer.run(&["accept", &filename])?;
     assert!(Path::new(&filename).exists());
     let metadata = std::fs::metadata(Path::new(&filename))?;
     assert_eq!(metadata.uid(), unsafe { getuid() });
@@ -95,40 +95,36 @@ fn test_accept_check_ownership_and_permissions(
 }
 
 #[rstest]
-fn test_accept_rename_upper_directory(
-    mut sandbox: SandboxManager,
-) -> Result<()> {
-    let dirname = sandbox.test_filename("test-dir");
-    let new_dirname = sandbox.test_filename("test-dir-new");
+fn test_accept_rename_upper_directory(mut layer: LayerManager) -> Result<()> {
+    let dirname = layer.test_filename("test-dir");
+    let new_dirname = layer.test_filename("test-dir-new");
     let path = Path::new(&dirname);
     let new_path = Path::new(&new_dirname);
     assert!(!path.exists());
     assert!(!new_path.exists());
-    sandbox.run(&["mkdir", &dirname])?;
+    layer.run(&["mkdir", &dirname])?;
     assert!(!path.exists());
     assert!(!new_path.exists());
-    sandbox.run(&["mv", &dirname, &new_dirname])?;
-    sandbox.run(&["accept"])?;
+    layer.run(&["mv", &dirname, &new_dirname])?;
+    layer.run(&["accept"])?;
     assert!(!path.exists());
     assert!(new_path.exists());
     Ok(())
 }
 
 #[rstest]
-fn test_accept_rename_lower_directory(
-    mut sandbox: SandboxManager,
-) -> Result<()> {
-    let dirname = sandbox.test_filename("test-dir");
-    let new_dirname = sandbox.test_filename("test-dir-new");
+fn test_accept_rename_lower_directory(mut layer: LayerManager) -> Result<()> {
+    let dirname = layer.test_filename("test-dir");
+    let new_dirname = layer.test_filename("test-dir-new");
     let path = Path::new(&dirname);
     let new_path = Path::new(&new_dirname);
     std::fs::create_dir(path)?;
     assert!(path.exists());
     assert!(!new_path.exists());
-    sandbox.run(&["mv", &dirname, &new_dirname])?;
+    layer.run(&["mv", &dirname, &new_dirname])?;
     assert!(path.exists());
     assert!(!new_path.exists());
-    sandbox.run(&["accept"])?;
+    layer.run(&["accept"])?;
     assert!(!path.exists());
     assert!(new_path.exists());
     Ok(())
@@ -136,20 +132,20 @@ fn test_accept_rename_lower_directory(
 
 #[rstest]
 fn test_accept_rename_lower_directory_with_stuff(
-    mut sandbox: SandboxManager,
+    mut layer: LayerManager,
 ) -> Result<()> {
-    let dirname = sandbox.test_filename("test-dir");
-    let new_dirname = sandbox.test_filename("test-dir-new");
+    let dirname = layer.test_filename("test-dir");
+    let new_dirname = layer.test_filename("test-dir-new");
     let path = Path::new(&dirname);
     let new_path = Path::new(&new_dirname);
     std::fs::create_dir(path)?;
     std::fs::write(path.join("test-file"), "test")?;
     assert!(path.exists());
     assert!(!new_path.exists());
-    sandbox.run(&["mv", &dirname, &new_dirname])?;
+    layer.run(&["mv", &dirname, &new_dirname])?;
     assert!(path.exists());
     assert!(!new_path.exists());
-    sandbox.run(&["accept"])?;
+    layer.run(&["accept"])?;
     assert!(!path.exists());
     assert!(new_path.exists());
     assert!(new_path.join("test-file").exists());
@@ -157,12 +153,12 @@ fn test_accept_rename_lower_directory_with_stuff(
 }
 
 #[rstest]
-fn test_accept_rename_symlink(mut sandbox: SandboxManager) -> Result<()> {
-    let filename = sandbox.test_filename("test-file");
-    let lower_symlink = sandbox.test_filename("test-symlink-lower");
-    let new_lower_symlink = sandbox.test_filename("test-symlink-lower-new");
-    let upper_symlink = sandbox.test_filename("test-symlink-upper");
-    let new_upper_symlink = sandbox.test_filename("test-symlink-upper-new");
+fn test_accept_rename_symlink(mut layer: LayerManager) -> Result<()> {
+    let filename = layer.test_filename("test-file");
+    let lower_symlink = layer.test_filename("test-symlink-lower");
+    let new_lower_symlink = layer.test_filename("test-symlink-lower-new");
+    let upper_symlink = layer.test_filename("test-symlink-upper");
+    let new_upper_symlink = layer.test_filename("test-symlink-upper-new");
 
     let filename_path = Path::new(&filename);
     let lower_symlink_path = Path::new(&lower_symlink);
@@ -181,7 +177,7 @@ fn test_accept_rename_symlink(mut sandbox: SandboxManager) -> Result<()> {
     assert!(!upper_symlink_path.exists());
     assert!(!new_upper_symlink_path.exists());
 
-    sandbox.run(&[
+    layer.run(&[
         "ln",
         "-s",
         filename_path.file_name().unwrap().to_str().unwrap(),
@@ -193,10 +189,10 @@ fn test_accept_rename_symlink(mut sandbox: SandboxManager) -> Result<()> {
     assert!(!upper_symlink_path.exists());
     assert!(!new_upper_symlink_path.exists());
 
-    sandbox.run(&["mv", &upper_symlink, &new_upper_symlink])?;
-    sandbox.run(&["mv", &lower_symlink, &new_lower_symlink])?;
+    layer.run(&["mv", &upper_symlink, &new_upper_symlink])?;
+    layer.run(&["mv", &lower_symlink, &new_lower_symlink])?;
 
-    sandbox.run(&["accept"])?;
+    layer.run(&["accept"])?;
     assert!(filename_path.exists());
     assert!(!lower_symlink_path.exists());
     assert!(new_lower_symlink_path.exists());
@@ -213,35 +209,35 @@ fn test_accept_rename_symlink(mut sandbox: SandboxManager) -> Result<()> {
 }
 
 #[rstest]
-fn test_accept_remove_file(mut sandbox: SandboxManager) -> Result<()> {
-    let filename = sandbox.test_filename("test-file");
+fn test_accept_remove_file(mut layer: LayerManager) -> Result<()> {
+    let filename = layer.test_filename("test-file");
     let path = Path::new(&filename);
     std::fs::write(path, "test")?;
     assert!(path.exists());
-    sandbox.run(&["rm", &filename])?;
+    layer.run(&["rm", &filename])?;
     assert!(path.exists());
-    sandbox.run(&["accept"])?;
+    layer.run(&["accept"])?;
     assert!(!path.exists());
     Ok(())
 }
 
 #[rstest]
-fn test_accept_remove_directory(mut sandbox: SandboxManager) -> Result<()> {
-    let dirname = sandbox.test_filename("test-dir");
+fn test_accept_remove_directory(mut layer: LayerManager) -> Result<()> {
+    let dirname = layer.test_filename("test-dir");
     let path = Path::new(&dirname);
     std::fs::create_dir(path)?;
     assert!(path.exists());
-    sandbox.run(&["rmdir", &dirname])?;
+    layer.run(&["rmdir", &dirname])?;
     assert!(path.exists());
-    sandbox.run(&["accept"])?;
+    layer.run(&["accept"])?;
     assert!(!path.exists());
     Ok(())
 }
 
 #[rstest]
-fn test_accept_remove_symlink(mut sandbox: SandboxManager) -> Result<()> {
-    let filename = sandbox.test_filename("test-file");
-    let symlink = sandbox.test_filename("test-symlink");
+fn test_accept_remove_symlink(mut layer: LayerManager) -> Result<()> {
+    let filename = layer.test_filename("test-file");
+    let symlink = layer.test_filename("test-symlink");
     let path = Path::new(&symlink);
     std::fs::write(Path::new(&filename), "test")?;
     std::os::unix::fs::symlink(
@@ -249,9 +245,9 @@ fn test_accept_remove_symlink(mut sandbox: SandboxManager) -> Result<()> {
         path,
     )?;
     assert!(path.exists());
-    sandbox.run(&["rm", &symlink])?;
+    layer.run(&["rm", &symlink])?;
     assert!(path.exists());
-    sandbox.run(&["accept"])?;
+    layer.run(&["accept"])?;
     assert!(Path::new(&filename).exists());
     assert!(!path.exists());
     Ok(())
@@ -261,10 +257,10 @@ fn test_accept_remove_symlink(mut sandbox: SandboxManager) -> Result<()> {
  * have been moved/removed in the upper, and then a new directory created
  * in the same place. */
 #[rstest]
-fn test_accept_opaque_directory(mut sandbox: SandboxManager) -> Result<()> {
-    let dirname = sandbox.test_filename("test-dir");
+fn test_accept_opaque_directory(mut layer: LayerManager) -> Result<()> {
+    let dirname = layer.test_filename("test-dir");
     let dirname_path = Path::new(&dirname);
-    let dir_renamed = sandbox.test_filename("renamed-dir");
+    let dir_renamed = layer.test_filename("renamed-dir");
     let dir_renamed_path = Path::new(&dir_renamed);
     let masked_file = dirname_path.join("somefile");
     let post_moved_masked_file = dir_renamed_path.join("somefile");
@@ -275,12 +271,12 @@ fn test_accept_opaque_directory(mut sandbox: SandboxManager) -> Result<()> {
     std::fs::write(&masked_file, "test")?;
     assert!(masked_file.exists());
 
-    sandbox.run(&["mv", &dirname, &dir_renamed])?;
+    layer.run(&["mv", &dirname, &dir_renamed])?;
     assert!(dirname_path.exists());
     assert!(!dir_renamed_path.exists());
 
-    sandbox.run(&["mkdir", &dirname])?;
-    sandbox.run(&["touch", new_file.to_str().unwrap()])?;
+    layer.run(&["mkdir", &dirname])?;
+    layer.run(&["touch", new_file.to_str().unwrap()])?;
 
     assert!(dirname_path.exists());
     assert!(!dir_renamed_path.exists());
@@ -288,7 +284,7 @@ fn test_accept_opaque_directory(mut sandbox: SandboxManager) -> Result<()> {
     assert!(!new_file.exists());
     assert!(!post_moved_masked_file.exists());
 
-    sandbox.run(&["accept"])?;
+    layer.run(&["accept"])?;
     assert!(dirname_path.exists());
     assert!(dir_renamed_path.exists());
     assert!(!masked_file.exists());
@@ -302,10 +298,8 @@ fn test_accept_opaque_directory(mut sandbox: SandboxManager) -> Result<()> {
  * have been moved/removed in the upper, and then a new directory created
  * in the same place. */
 #[rstest]
-fn test_accept_removed_opaque_directory(
-    mut sandbox: SandboxManager,
-) -> Result<()> {
-    let dirname = sandbox.test_filename("test-dir");
+fn test_accept_removed_opaque_directory(mut layer: LayerManager) -> Result<()> {
+    let dirname = layer.test_filename("test-dir");
     let dirname_path = Path::new(&dirname);
     let old_file = dirname_path.join("oldfile");
     let new_file = dirname_path.join("newfile");
@@ -315,18 +309,18 @@ fn test_accept_removed_opaque_directory(
     std::fs::write(&old_file, "test")?;
     assert!(old_file.exists());
 
-    sandbox.run(&["rm", "-Rf", &dirname])?;
+    layer.run(&["rm", "-Rf", &dirname])?;
     assert!(dirname_path.exists());
     assert!(old_file.exists());
 
-    sandbox.run(&["mkdir", &dirname])?;
-    sandbox.run(&["touch", new_file.to_str().unwrap()])?;
+    layer.run(&["mkdir", &dirname])?;
+    layer.run(&["touch", new_file.to_str().unwrap()])?;
 
     assert!(dirname_path.exists());
     assert!(old_file.exists());
     assert!(!new_file.exists());
 
-    sandbox.run(&["accept"])?;
+    layer.run(&["accept"])?;
     assert!(dirname_path.exists());
     assert!(!old_file.exists());
     assert!(new_file.exists());
@@ -335,12 +329,12 @@ fn test_accept_removed_opaque_directory(
 }
 
 #[rstest]
-fn test_accept_negated_pattern(mut sandbox: SandboxManager) -> Result<()> {
-    let filename = sandbox.test_filename("test-file");
-    let filename2 = sandbox.test_filename("test-file2");
-    sandbox.run(&["touch", &filename])?;
-    sandbox.run(&["touch", &filename2])?;
-    sandbox.run(&["accept", "!**/test-file2*"])?;
+fn test_accept_negated_pattern(mut layer: LayerManager) -> Result<()> {
+    let filename = layer.test_filename("test-file");
+    let filename2 = layer.test_filename("test-file2");
+    layer.run(&["touch", &filename])?;
+    layer.run(&["touch", &filename2])?;
+    layer.run(&["accept", "!**/test-file2*"])?;
     assert!(Path::new(&filename).exists());
     assert!(!Path::new(&filename2).exists());
     Ok(())
@@ -348,39 +342,39 @@ fn test_accept_negated_pattern(mut sandbox: SandboxManager) -> Result<()> {
 
 #[rstest]
 fn test_accept_file_ignore_invalid_upper_dirs(
-    mut sandbox: SandboxManager,
+    mut layer: LayerManager,
 ) -> Result<()> {
-    sandbox.run(&["config", "sandbox_dir"])?;
-    let base = sandbox.last_stdout.trim();
+    layer.run(&["config", "layer_dir"])?;
+    let base = layer.last_stdout.trim();
     let upper_dir = Path::new(base).join("upper");
     let invalid_base32_dir = Path::new(&upper_dir).join("invalid");
     let invalid_utf8_dir = Path::new(&upper_dir).join("777Q");
     std::fs::create_dir_all(&invalid_base32_dir)?;
     std::fs::create_dir_all(&invalid_utf8_dir)?;
 
-    let filename = sandbox.test_filename("file");
+    let filename = layer.test_filename("file");
     let path = Path::new(&filename);
-    sandbox.run(&["touch", &filename])?;
+    layer.run(&["touch", &filename])?;
     assert!(!path.exists());
-    sandbox.run(&["accept", &filename])?;
+    layer.run(&["accept", &filename])?;
     assert!(path.exists());
     std::fs::remove_file(path)?;
     assert!(!path.exists());
-    sandbox.run(&["accept", &filename])?;
+    layer.run(&["accept", &filename])?;
     assert!(!path.exists());
     Ok(())
 }
 
 #[rstest]
-fn test_file_overwrite(mut sandbox: SandboxManager) -> Result<()> {
-    let filename = sandbox.test_filename("file");
+fn test_file_overwrite(mut layer: LayerManager) -> Result<()> {
+    let filename = layer.test_filename("file");
     let path = Path::new(&filename);
     std::fs::write(&filename, "test")?;
-    sandbox.run(&["rm", &filename])?;
+    layer.run(&["rm", &filename])?;
     assert!(path.exists());
-    sandbox.run(&["touch", &filename])?;
+    layer.run(&["touch", &filename])?;
     assert!(path.exists());
-    sandbox.run(&["accept", &filename])?;
+    layer.run(&["accept", &filename])?;
     assert!(path.exists());
     let contents = std::fs::read(path)?;
     assert_eq!(contents, b"");
@@ -388,16 +382,16 @@ fn test_file_overwrite(mut sandbox: SandboxManager) -> Result<()> {
 }
 
 #[rstest]
-fn test_chmod_file(mut sandbox: SandboxManager) -> Result<()> {
-    let filename = sandbox.test_filename("file");
+fn test_chmod_file(mut layer: LayerManager) -> Result<()> {
+    let filename = layer.test_filename("file");
     let path = Path::new(&filename);
     std::fs::write(&filename, "test")?;
     let orig_metadata = std::fs::metadata(path)?;
-    sandbox.run(&["chmod", "660", &filename])?;
+    layer.run(&["chmod", "660", &filename])?;
     assert!(path.exists());
     let metadata = std::fs::metadata(path)?;
     assert_eq!(metadata.permissions(), orig_metadata.permissions());
-    sandbox.run(&["accept", &filename])?;
+    layer.run(&["accept", &filename])?;
     assert!(path.exists());
     let metadata = std::fs::metadata(path)?;
     assert_ne!(metadata.mode() & 0o777, orig_metadata.mode() & 0o777);
@@ -405,16 +399,16 @@ fn test_chmod_file(mut sandbox: SandboxManager) -> Result<()> {
 }
 
 #[rstest]
-fn test_chmod_directory(mut sandbox: SandboxManager) -> Result<()> {
-    let dirname = sandbox.test_filename("dir");
+fn test_chmod_directory(mut layer: LayerManager) -> Result<()> {
+    let dirname = layer.test_filename("dir");
     let path = Path::new(&dirname);
     std::fs::create_dir(path)?;
     let orig_metadata = std::fs::metadata(path)?;
-    sandbox.run(&["chmod", "770", &dirname])?;
+    layer.run(&["chmod", "770", &dirname])?;
     assert!(path.exists());
     let metadata = std::fs::metadata(path)?;
     assert_eq!(metadata.permissions(), orig_metadata.permissions());
-    sandbox.run(&["accept", &dirname])?;
+    layer.run(&["accept", &dirname])?;
     assert!(path.exists());
     let metadata = std::fs::metadata(path)?;
     println!();
@@ -423,8 +417,8 @@ fn test_chmod_directory(mut sandbox: SandboxManager) -> Result<()> {
     println!();
     println!();
     println!();
-    println!("output: {}", sandbox.last_stdout);
-    println!("error: {}", sandbox.last_stderr);
+    println!("output: {}", layer.last_stdout);
+    println!("error: {}", layer.last_stderr);
     println!();
     println!();
     println!();
@@ -433,11 +427,11 @@ fn test_chmod_directory(mut sandbox: SandboxManager) -> Result<()> {
 }
 
 #[rstest]
-fn test_accept_symlink_overwrites(mut sandbox: SandboxManager) -> Result<()> {
-    let dir = sandbox.test_filename("test-dir");
+fn test_accept_symlink_overwrites(mut layer: LayerManager) -> Result<()> {
+    let dir = layer.test_filename("test-dir");
     let dir_file = Path::new(&dir).join("subfile");
-    let file = sandbox.test_filename("test-file");
-    let file2 = sandbox.test_filename("test-file2");
+    let file = layer.test_filename("test-file");
+    let file2 = layer.test_filename("test-file2");
     std::fs::create_dir_all(&dir)?;
     std::fs::write(&dir_file, "subfile")?;
     std::fs::write(&file, "test")?;
@@ -445,13 +439,13 @@ fn test_accept_symlink_overwrites(mut sandbox: SandboxManager) -> Result<()> {
     let file2_symlink_name =
         Path::new(&file2).file_name().unwrap().to_str().unwrap();
 
-    sandbox.run(&["rm", dir_file.to_str().unwrap()])?;
-    sandbox.run(&["rmdir", &dir])?;
-    sandbox.run(&["rm", &file])?;
-    sandbox.run(&["ln", "-s", file2_symlink_name, &file])?;
-    sandbox.run(&["ln", "-s", file2_symlink_name, &dir])?;
+    layer.run(&["rm", dir_file.to_str().unwrap()])?;
+    layer.run(&["rmdir", &dir])?;
+    layer.run(&["rm", &file])?;
+    layer.run(&["ln", "-s", file2_symlink_name, &file])?;
+    layer.run(&["ln", "-s", file2_symlink_name, &dir])?;
 
-    assert!(sandbox.pass(&["accept"]));
+    assert!(layer.pass(&["accept"]));
 
     let file_contents = std::fs::read(&file)?;
     let dir_contents = std::fs::read(&dir)?;
@@ -462,13 +456,13 @@ fn test_accept_symlink_overwrites(mut sandbox: SandboxManager) -> Result<()> {
 }
 
 #[rstest]
-fn test_accept_directory_overwrite(mut sandbox: SandboxManager) -> Result<()> {
-    let p = sandbox.test_filename("test-file");
+fn test_accept_directory_overwrite(mut layer: LayerManager) -> Result<()> {
+    let p = layer.test_filename("test-file");
 
     std::fs::write(&p, "test")?;
-    sandbox.run(&["rm", &p])?;
-    sandbox.run(&["mkdir", &p])?;
-    assert!(sandbox.pass(&["accept"]));
+    layer.run(&["rm", &p])?;
+    layer.run(&["mkdir", &p])?;
+    assert!(layer.pass(&["accept"]));
     let path = Path::new(&p);
     assert!(path.exists());
     assert!(path.is_dir());
@@ -483,11 +477,11 @@ fn test_accept_directory_overwrite(mut sandbox: SandboxManager) -> Result<()> {
 
 #[allow(non_snake_case)]
 #[rstest]
-fn test_accept_inside_out(mut sandbox: SandboxManager) -> Result<()> {
-    let A_str = sandbox.test_filename_no_rid("A");
-    let B_str = sandbox.test_filename_no_rid("A/B");
-    let post_A_str = sandbox.test_filename_no_rid("B/A");
-    let post_B_str = sandbox.test_filename_no_rid("B");
+fn test_accept_inside_out(mut layer: LayerManager) -> Result<()> {
+    let A_str = layer.test_filename_no_rid("A");
+    let B_str = layer.test_filename_no_rid("A/B");
+    let post_A_str = layer.test_filename_no_rid("B/A");
+    let post_B_str = layer.test_filename_no_rid("B");
 
     let A = Path::new(&A_str);
     let A_file_pre = A.join("a_file_pre");
@@ -523,43 +517,43 @@ fn test_accept_inside_out(mut sandbox: SandboxManager) -> Result<()> {
     std::fs::write(&B_file_del_post, "B_file_del_post")?;
 
     // modify before
-    sandbox.run(&[
+    layer.run(&[
         "bash",
         "-c",
         format!("echo -n 'modified_A_pre' > {}", A_file_pre.display()).as_str(),
     ])?;
-    sandbox.run(&[
+    layer.run(&[
         "bash",
         "-c",
         format!("echo -n 'modified_B_pre' > {}", B_file_pre.display()).as_str(),
     ])?;
     // remove before
-    sandbox.run(&["rm", A_file_del_pre.to_str().unwrap()])?;
-    sandbox.run(&["rm", B_file_del_pre.to_str().unwrap()])?;
+    layer.run(&["rm", A_file_del_pre.to_str().unwrap()])?;
+    layer.run(&["rm", B_file_del_pre.to_str().unwrap()])?;
 
     // move A/B -> B/A
-    sandbox.run(&["mv", B.to_str().unwrap(), post_B.to_str().unwrap()])?;
-    sandbox.run(&["mv", A.to_str().unwrap(), post_A.to_str().unwrap()])?;
+    layer.run(&["mv", B.to_str().unwrap(), post_B.to_str().unwrap()])?;
+    layer.run(&["mv", A.to_str().unwrap(), post_A.to_str().unwrap()])?;
 
     // modify after
-    sandbox.run(&[
+    layer.run(&[
         "bash",
         "-c",
         format!("echo -n 'modified_A_post' > {}", post_A_file_post.display())
             .as_str(),
     ])?;
-    sandbox.run(&[
+    layer.run(&[
         "bash",
         "-c",
         format!("echo -n 'modified_B_post' > {}", post_B_file_post.display())
             .as_str(),
     ])?;
     // remove after
-    sandbox.run(&["rm", post_A_file_del_post.to_str().unwrap()])?;
-    sandbox.run(&["rm", post_B_file_del_post.to_str().unwrap()])?;
+    layer.run(&["rm", post_A_file_del_post.to_str().unwrap()])?;
+    layer.run(&["rm", post_B_file_del_post.to_str().unwrap()])?;
 
     // Accept the changes and verify the contents
-    assert!(sandbox.pass(&["accept"]));
+    assert!(layer.pass(&["accept"]));
     assert!(post_A.exists());
     assert!(post_B.exists());
     assert!(post_A_file_pre.exists());
@@ -598,9 +592,9 @@ fn test_accept_inside_out(mut sandbox: SandboxManager) -> Result<()> {
 
 #[allow(non_snake_case)]
 #[rstest]
-fn test_accept_opaque(mut sandbox: SandboxManager) -> Result<()> {
-    let A_str = sandbox.test_filename_no_rid("A");
-    let C_str = sandbox.test_filename_no_rid("C");
+fn test_accept_opaque(mut layer: LayerManager) -> Result<()> {
+    let A_str = layer.test_filename_no_rid("A");
+    let C_str = layer.test_filename_no_rid("C");
 
     let A = Path::new(&A_str);
     let A_B = A.join("B");
@@ -613,10 +607,10 @@ fn test_accept_opaque(mut sandbox: SandboxManager) -> Result<()> {
     std::fs::write(&A_B_file, "A_B_file")?;
     std::fs::write(&A_B_file_removed, "A_B_file_removed")?;
 
-    sandbox.run(&["mv", A.to_str().unwrap(), C.to_str().unwrap()])?;
-    sandbox.run(&["rm", "-Rf", C_B.to_str().unwrap()])?;
-    sandbox.run(&["mkdir", C_B.to_str().unwrap()])?;
-    sandbox.run(&[
+    layer.run(&["mv", A.to_str().unwrap(), C.to_str().unwrap()])?;
+    layer.run(&["rm", "-Rf", C_B.to_str().unwrap()])?;
+    layer.run(&["mkdir", C_B.to_str().unwrap()])?;
+    layer.run(&[
         "bash",
         "-c",
         format!(
@@ -625,7 +619,7 @@ fn test_accept_opaque(mut sandbox: SandboxManager) -> Result<()> {
         )
         .as_str(),
     ])?;
-    sandbox.run(&[
+    layer.run(&[
         "bash",
         "-c",
         format!(
@@ -635,7 +629,7 @@ fn test_accept_opaque(mut sandbox: SandboxManager) -> Result<()> {
         .as_str(),
     ])?;
 
-    assert!(sandbox.pass(&["accept"]));
+    assert!(layer.pass(&["accept"]));
 
     assert!(!A_B.exists());
     assert!(C.exists());

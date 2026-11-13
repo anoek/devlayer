@@ -17,7 +17,7 @@ pub fn rid() -> String {
     rid
 }
 
-pub fn get_sandbox_bin() -> String {
+pub fn get_devlayer_bin() -> String {
     // Get the original working directory when the tests start
     // This is needed because tests may change directories
     let cargo_manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
@@ -56,7 +56,7 @@ pub fn get_sandbox_bin() -> String {
     absolute_path.to_string_lossy().to_string()
 }
 
-pub struct SandboxManager {
+pub struct LayerManager {
     pub name: String,
     pub last_stdout: String,
     pub last_stderr: String,
@@ -64,13 +64,13 @@ pub struct SandboxManager {
     pub all_stderr: String,
     pub debug_mode: bool,
     pub no_sudo: bool,
-    /* we store the sandbox binary path so we can chdir as necessary */
-    pub sandbox_bin: String,
+    /* we store the layer binary path so we can chdir as necessary */
+    pub devlayer_bin: String,
     pub no_default_options: bool,
     pub ignored: bool, // Controls whether --ignored is automatically added
 }
 
-impl SandboxManager {
+impl LayerManager {
     pub fn new() -> Self {
         let name = format!("devlayer-coverage-test-{}", rid());
 
@@ -95,13 +95,13 @@ impl SandboxManager {
             all_stderr: String::new(),
             debug_mode: false,
             no_sudo: false,
-            sandbox_bin: get_sandbox_bin(),
+            devlayer_bin: get_devlayer_bin(),
             no_default_options: false,
             ignored: true, // Default to true to maintain existing behavior
         }
     }
 
-    /* When debug mode is on, the sandbox will not be cleaned up when the fixture is dropped */
+    /* When debug mode is on, the layer will not be cleaned up when the fixture is dropped */
     #[allow(dead_code)]
     pub fn set_debug_mode(&mut self, debug_mode: bool) {
         self.debug_mode = debug_mode;
@@ -116,14 +116,14 @@ impl SandboxManager {
     #[allow(dead_code)]
     pub fn dir(&self) -> Result<PathBuf> {
         let mut cmd = Command::new("sudo");
-        cmd.args(["-E", &self.sandbox_bin]);
+        cmd.args(["-E", &self.devlayer_bin]);
 
         if self.no_sudo {
-            cmd = Command::new(&self.sandbox_bin);
+            cmd = Command::new(&self.devlayer_bin);
         }
 
         cmd.args([format!("--name={}", &self.name)]);
-        cmd.args(["config", "sandbox_dir"]);
+        cmd.args(["config", "layer_dir"]);
         let output = cmd.output()?;
         let base = String::from_utf8_lossy(&output.stdout).to_string();
         let base = base.trim();
@@ -160,10 +160,10 @@ impl SandboxManager {
         use std::process::Stdio;
 
         let mut cmd = Command::new("sudo");
-        cmd.args(["-E", &self.sandbox_bin]);
+        cmd.args(["-E", &self.devlayer_bin]);
 
         if self.no_sudo {
-            cmd = Command::new(&self.sandbox_bin);
+            cmd = Command::new(&self.devlayer_bin);
         }
 
         if !self.no_default_options
@@ -253,10 +253,10 @@ impl SandboxManager {
             println!("Setting env var: {}={}", env_key, env_value);
             cmd.env(env_key, env_value);
         }
-        cmd.args(["-E", &self.sandbox_bin]);
+        cmd.args(["-E", &self.devlayer_bin]);
 
         if self.no_sudo {
-            cmd = Command::new(&self.sandbox_bin);
+            cmd = Command::new(&self.devlayer_bin);
         }
 
         if !self.no_default_options
@@ -320,10 +320,10 @@ impl SandboxManager {
     #[allow(dead_code)]
     pub fn run_in_background(&mut self, args: &[&str]) -> Result<Child> {
         let mut cmd = Command::new("sudo");
-        cmd.args(["-E", &self.sandbox_bin]);
+        cmd.args(["-E", &self.devlayer_bin]);
 
         if self.no_sudo {
-            cmd = Command::new(&self.sandbox_bin);
+            cmd = Command::new(&self.devlayer_bin);
         }
 
         if !self.no_default_options {
@@ -394,7 +394,7 @@ impl SandboxManager {
     }
 }
 
-impl Drop for SandboxManager {
+impl Drop for LayerManager {
     fn drop(&mut self) {
         // Reset flags to default state for cleanup commands
         self.no_default_options = false;
@@ -421,8 +421,8 @@ impl Drop for SandboxManager {
                     warn!("Failed to remove {} dir: {}", dirname.display(), e);
                 }
             }
-            let sandbox_name = self.name.clone();
-            match self.run(&["delete", "-y", sandbox_name.as_str()]) {
+            let layer_name = self.name.clone();
+            match self.run(&["delete", "-y", layer_name.as_str()]) {
                 Ok(_) => (),
                 Err(e) => {
                     warn!("Failed to delete layer: {}", e);
@@ -437,6 +437,6 @@ impl Drop for SandboxManager {
 }
 
 #[fixture]
-pub fn sandbox() -> SandboxManager {
-    SandboxManager::new()
+pub fn layer() -> LayerManager {
+    LayerManager::new()
 }

@@ -72,7 +72,7 @@ pub struct Config {
     pub log_level: log::LevelFilter,
     pub name: String,
     pub storage_dir: PathBuf,
-    pub sandbox_dir: PathBuf,
+    pub layer_dir: PathBuf,
     pub upper_cwd: PathBuf,
     pub overlay_cwd: PathBuf,
     pub net: Network,
@@ -81,9 +81,9 @@ pub struct Config {
     pub bind_mounts: Vec<BindMount>,
     pub no_default_binds: bool,
     pub audio: bool,
-    /// Number of CPUs the sandbox may use, None for unlimited
+    /// Number of CPUs the layer may use, None for unlimited
     pub cpus: Option<f64>,
-    /// Bytes of memory the sandbox may use, None for unlimited
+    /// Bytes of memory the layer may use, None for unlimited
     pub memory: Option<u64>,
     pub config_files: Vec<PathBuf>,
 }

@@ -1,23 +1,23 @@
 use crate::config::{BindMount, Config};
-use crate::sandbox::mount_overlays::MountHash;
+use crate::layer::mount_overlays::MountHash;
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SandboxSettings {
+pub struct LayerSettings {
     pub version: String,
     pub mounts: Vec<MountHash>,
     pub network: crate::config::Network,
     pub bind_mounts: Vec<BindMount>,
-    // Defaulted so settings from sandboxes started by older versions load
+    // Defaulted so settings from layers started by older versions load
     #[serde(default)]
     pub cpus: Option<f64>,
     #[serde(default)]
     pub memory: Option<u64>,
 }
 
-impl SandboxSettings {
+impl LayerSettings {
     pub fn from_config(config: &Config, mounts: &[MountHash]) -> Self {
         Self {
             version: env!("CARGO_PKG_VERSION").to_string(),
@@ -63,7 +63,7 @@ impl SandboxSettings {
             "Failed to read settings.json from {}",
             path.display()
         ))?;
-        let settings: SandboxSettings = serde_json::from_str(&settings_json)
+        let settings: LayerSettings = serde_json::from_str(&settings_json)
             .context("Failed to parse settings.json")?;
         Ok(settings)
     }

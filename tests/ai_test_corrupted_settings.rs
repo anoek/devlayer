@@ -1,5 +1,5 @@
-// Integration tests for corrupted sandbox settings handling
-// These tests verify error handling when sandbox settings files are corrupted or unreadable
+// Integration tests for corrupted layer settings handling
+// These tests verify error handling when layer settings files are corrupted or unreadable
 
 mod fixtures;
 
@@ -10,17 +10,17 @@ use std::fs;
 
 #[rstest]
 fn test_get_or_create_with_corrupted_settings(
-    mut sandbox: SandboxManager,
+    mut layer: LayerManager,
 ) -> Result<()> {
-    // First, create a working sandbox
-    let _output = sandbox.run(&["echo", "initial setup"])?;
+    // First, create a working layer
+    let _output = layer.run(&["echo", "initial setup"])?;
 
-    // Get the sandbox directory from the sandbox tool itself
-    let sandbox_dir = sandbox.dir()?;
-    let data_dir = sandbox_dir.join("data");
+    // Get the layer directory from the layer tool itself
+    let layer_dir = layer.dir()?;
+    let data_dir = layer_dir.join("data");
     let settings_file = data_dir.join("settings.json");
 
-    // Verify the sandbox was created and settings file exists
+    // Verify the layer was created and settings file exists
     assert!(
         settings_file.exists(),
         "Settings file should exist after initial layer creation at {}",
@@ -45,8 +45,8 @@ fn test_get_or_create_with_corrupted_settings(
     }
 
     // Now try to run another command - this should trigger the error path in get_or_create
-    // because the existing sandbox has corrupted settings
-    let success = sandbox.pass(&["echo", "second command"]);
+    // because the existing layer has corrupted settings
+    let success = layer.pass(&["echo", "second command"]);
 
     // The command should fail due to corrupted settings
     assert!(
@@ -55,7 +55,7 @@ fn test_get_or_create_with_corrupted_settings(
     );
 
     // Check that the error message contains the expected text
-    let error_output = sandbox.last_stderr.clone();
+    let error_output = layer.last_stderr.clone();
 
     assert!(
         error_output.contains("Failed to load existing layer settings")
@@ -70,17 +70,17 @@ fn test_get_or_create_with_corrupted_settings(
 
 #[rstest]
 fn test_get_or_create_with_unreadable_settings(
-    mut sandbox: SandboxManager,
+    mut layer: LayerManager,
 ) -> Result<()> {
-    // First, create a working sandbox
-    let _output = sandbox.run(&["echo", "initial setup"])?;
+    // First, create a working layer
+    let _output = layer.run(&["echo", "initial setup"])?;
 
-    // Get the sandbox directory from the sandbox tool itself
-    let sandbox_dir = sandbox.dir()?;
-    let data_dir = sandbox_dir.join("data");
+    // Get the layer directory from the layer tool itself
+    let layer_dir = layer.dir()?;
+    let data_dir = layer_dir.join("data");
     let settings_file = data_dir.join("settings.json");
 
-    // Verify the sandbox was created and settings file exists
+    // Verify the layer was created and settings file exists
     assert!(
         settings_file.exists(),
         "Settings file should exist after initial layer creation"
@@ -96,7 +96,7 @@ fn test_get_or_create_with_unreadable_settings(
         // Only test this if we can actually change permissions (i.e., we're not root)
         if fs::set_permissions(&settings_file, perms).is_ok() {
             // Try to run another command - this should trigger the error path
-            let success = sandbox.pass(&["echo", "second command"]);
+            let success = layer.pass(&["echo", "second command"]);
 
             // The command should fail due to permission error
             assert!(
@@ -105,7 +105,7 @@ fn test_get_or_create_with_unreadable_settings(
             );
 
             // Check that the error message contains the expected text
-            let error_output = sandbox.last_stderr.clone();
+            let error_output = layer.last_stderr.clone();
 
             assert!(
                 error_output.contains("Failed to load existing layer settings")
@@ -127,17 +127,17 @@ fn test_get_or_create_with_unreadable_settings(
 
 #[rstest]
 fn test_get_or_create_with_directory_as_settings_file(
-    mut sandbox: SandboxManager,
+    mut layer: LayerManager,
 ) -> Result<()> {
-    // First, create a working sandbox
-    let _output = sandbox.run(&["echo", "initial setup"])?;
+    // First, create a working layer
+    let _output = layer.run(&["echo", "initial setup"])?;
 
-    // Get the sandbox directory from the sandbox tool itself
-    let sandbox_dir = sandbox.dir()?;
-    let data_dir = sandbox_dir.join("data");
+    // Get the layer directory from the layer tool itself
+    let layer_dir = layer.dir()?;
+    let data_dir = layer_dir.join("data");
     let settings_file = data_dir.join("settings.json");
 
-    // Verify the sandbox was created and settings file exists
+    // Verify the layer was created and settings file exists
     assert!(
         settings_file.exists(),
         "Settings file should exist after initial layer creation"
@@ -154,7 +154,7 @@ fn test_get_or_create_with_directory_as_settings_file(
     );
 
     // Try to run another command - this should trigger the error path
-    let success = sandbox.pass(&["echo", "second command"]);
+    let success = layer.pass(&["echo", "second command"]);
 
     // The command should fail
     assert!(
@@ -163,7 +163,7 @@ fn test_get_or_create_with_directory_as_settings_file(
     );
 
     // Check that the error message contains the expected text
-    let error_output = sandbox.last_stderr.clone();
+    let error_output = layer.last_stderr.clone();
 
     assert!(
         error_output.contains("Failed to load existing layer settings")

@@ -8,10 +8,10 @@ use fixtures::*;
 use rstest::*;
 
 #[rstest]
-fn test_exercise_unmovable_files(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.run(&["true"])?;
-    sandbox.run(&["config", "sandbox_dir"])?;
-    let base = sandbox.last_stdout.trim();
+fn test_exercise_unmovable_files(mut layer: LayerManager) -> Result<()> {
+    layer.run(&["true"])?;
+    layer.run(&["config", "layer_dir"])?;
+    let base = layer.last_stdout.trim();
     let upper_dir = Path::new(base).join("upper");
     // F4 = /
     let char_device = upper_dir.join("F4").join("char-device");
@@ -21,16 +21,16 @@ fn test_exercise_unmovable_files(mut sandbox: SandboxManager) -> Result<()> {
         .output()?;
     assert!(output.status.success());
 
-    sandbox.run(&["status", "/"])?;
-    let status = sandbox.last_stdout.trim();
+    layer.run(&["status", "/"])?;
+    let status = layer.last_stdout.trim();
     assert!(status.contains("!"));
     assert!(status.contains("char-device"));
 
     let cwd = std::env::current_dir()?;
     chdir("/")?;
-    assert!(sandbox.xfail(&["accept", "/char-device"]));
+    assert!(layer.xfail(&["accept", "/char-device"]));
     chdir(&cwd)?; // restore for cleanup
-    let status = sandbox.last_stderr.trim();
+    let status = layer.last_stderr.trim();
     assert!(status.contains("Unsupported file type"));
 
     Ok(())

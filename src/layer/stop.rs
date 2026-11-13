@@ -1,11 +1,11 @@
-use crate::sandbox::Sandbox;
-use crate::sandbox::cgroup::remove_cgroup;
+use crate::layer::Layer;
+use crate::layer::cgroup::remove_cgroup;
 use anyhow::{Context, Result};
 use log::trace;
 use nix::{fcntl::readlink, unistd::Pid};
 use std::path::{Path, PathBuf};
 
-impl Sandbox {
+impl Layer {
     pub fn stop(&self) -> Result<()> {
         let pid = self.pid;
         if pid == Pid::from_raw(-1) {
@@ -23,7 +23,7 @@ impl Sandbox {
 
             #[cfg(feature = "coverage")]
             if std::env::var_os("TEST_STOP_RACE").is_some() {
-                // pre-kill the sandbox process to simulate a race or otherwise
+                // pre-kill the layer process to simulate a race or otherwise
                 // inability to read the pid namespace file
                 nix::sys::signal::kill(pid, nix::sys::signal::Signal::SIGKILL)?;
                 // wait for the process to be killed
@@ -32,22 +32,22 @@ impl Sandbox {
                 }
             }
 
-            // Get our sandbox namespaces
-            let sandbox_ns_str = format!("/proc/{}/ns/pid_for_children", pid);
-            trace!("layer_ns_str: {}", sandbox_ns_str);
-            let sandbox_ns_path = Path::new(&sandbox_ns_str);
-            trace!("layer_ns_path: {}", sandbox_ns_path.display());
+            // Get our layer namespaces
+            let layer_ns_str = format!("/proc/{}/ns/pid_for_children", pid);
+            trace!("layer_ns_str: {}", layer_ns_str);
+            let layer_ns_path = Path::new(&layer_ns_str);
+            trace!("layer_ns_path: {}", layer_ns_path.display());
 
-            if !sandbox_ns_path.exists() {
+            if !layer_ns_path.exists() {
                 trace!("Layer process {} already gone", pid);
             } else {
-                let ns = readlink(sandbox_ns_path).context(format!(
+                let ns = readlink(layer_ns_path).context(format!(
                     "failed to readlink {}",
-                    sandbox_ns_path.display()
+                    layer_ns_path.display()
                 ))?;
                 trace!("layer_ns: {}", ns.to_string_lossy());
 
-                // Collect each process that shares a namespace with our sandbox
+                // Collect each process that shares a namespace with our layer
                 for entry in std::fs::read_dir("/proc")
                     .context(format!("failed to read /proc"))?
                     .filter_map(Result::ok)
@@ -66,7 +66,7 @@ impl Sandbox {
 
                     let process_pid = Pid::from_raw(pid_str.parse::<i32>()?);
 
-                    // Check if this process belongs to our sandbox namespace
+                    // Check if this process belongs to our layer namespace
                     let proc_ns_str = format!("/proc/{}/ns/pid", pid_str);
 
                     #[cfg(feature = "coverage")]
@@ -112,7 +112,7 @@ impl Sandbox {
 
                         #[cfg(feature = "coverage")]
                         if std::env::var_os("TEST_STOP_RACE2").is_some() {
-                            // pre-kill the sandbox process to simulate a race or otherwise
+                            // pre-kill the layer process to simulate a race or otherwise
                             // inability to read the pid namespace file
                             nix::sys::signal::kill(
                                 pid,

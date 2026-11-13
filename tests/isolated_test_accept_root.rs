@@ -9,7 +9,7 @@ use std::{path::Path, process::Command};
  * and tests are run in parallel per file. */
 
 #[rstest]
-fn test_accept_root_file(mut sandbox: SandboxManager) -> Result<()> {
+fn test_accept_root_file(mut layer: LayerManager) -> Result<()> {
     let dirname = "/delete-me-this-is-a-devlayer-coverage-test-dir";
     let filename = dirname.to_string()
         + "/delete-me-this-is-a-devlayer-coverage-test-file";
@@ -26,10 +26,10 @@ fn test_accept_root_file(mut sandbox: SandboxManager) -> Result<()> {
         .arg(dirname)
         .output()?;
     let path = Path::new(&filename);
-    sandbox.run(&["rm", &filename])?;
+    layer.run(&["rm", &filename])?;
     assert!(path.exists());
 
-    sandbox.run(&["accept", &filename])?;
+    layer.run(&["accept", &filename])?;
     assert!(!path.exists());
 
     Command::new("sudo").arg("rmdir").arg(dirname).output()?;

@@ -9,7 +9,7 @@ name = "devlayer"
 path = "src/main.rs"
 
 [lib]
-name = "sandbox"
+name = "devlayer"
 path = "src/lib.rs"
 
 [lints.rust]

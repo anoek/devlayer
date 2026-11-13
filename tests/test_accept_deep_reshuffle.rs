@@ -20,10 +20,10 @@ fn entry(base: &Path, name: &str) -> Result<PathBuf> {
 }
 
 /* This test creates a deep directory structure on the host system,
- * then sorts the directory structure in the sandbox */
+ * then sorts the directory structure in the layer */
 #[rstest]
-fn test_accept_deep_reshuffle(mut sandbox: SandboxManager) -> Result<()> {
-    let mut path = PathBuf::from(&sandbox.test_filename_no_rid("source"));
+fn test_accept_deep_reshuffle(mut layer: LayerManager) -> Result<()> {
+    let mut path = PathBuf::from(&layer.test_filename_no_rid("source"));
     let base = path.clone();
     let disorder = ["3", "1", "5", "2", "8", "4", "9", "7", "6", "0"];
 
@@ -31,25 +31,25 @@ fn test_accept_deep_reshuffle(mut sandbox: SandboxManager) -> Result<()> {
         path = entry(&path, name)?;
     }
 
-    /* Sorts the directory structure in the sandbox so we end up with */
+    /* Sorts the directory structure in the layer so we end up with */
     /* 0/1/2/3/4/5/6/7/8/9 */
     let mut to_path = base.clone();
     for i in 0..10 {
-        sandbox.run(&[
+        layer.run(&[
             "bash",
             "-c",
             format!("find {} | grep '{}$'", base.display(), i).as_str(),
         ])?;
-        let from_path = sandbox.last_stdout.trim().to_string();
+        let from_path = layer.last_stdout.trim().to_string();
         to_path = to_path.join(format!("{}", i));
         let to_path_str = to_path.display().to_string();
-        sandbox.run(&["mv", &from_path, &to_path_str])?;
+        layer.run(&["mv", &from_path, &to_path_str])?;
     }
 
-    //sandbox.run(&["status"])?;
-    sandbox.run(&["accept"])?;
+    //layer.run(&["status"])?;
+    layer.run(&["accept"])?;
 
-    //let output = sandbox.run(&["ls", "-R", base.display().as_str()])?;
+    //let output = layer.run(&["ls", "-R", base.display().as_str()])?;
     //println!("{}", output.stdout);
 
     /* Verify the contents of the directory structure and files */

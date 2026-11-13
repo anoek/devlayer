@@ -1,10 +1,10 @@
-use crate::sandbox::Sandbox;
+use crate::layer::Layer;
 use crate::util::get_mounts;
 use anyhow::Result;
 use log::{debug, error};
 use std::ffi::CString;
 
-impl Sandbox {
+impl Layer {
     pub fn unmount(&self) -> Result<()> {
         let mut mounts = get_mounts(&self.base)?;
         mounts.sort_by(|a, b| b.cmp(a));

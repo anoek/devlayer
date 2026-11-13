@@ -13,13 +13,12 @@ pub struct Lock {
 }
 
 impl Lock {
-    /** Acquire a lock on the sandbox storage directory. */
-    pub fn sandbox(
-        sandboxes_storage_dir: &Path,
-        sandbox_name: &str,
+    /** Acquire a lock on the layer storage directory. */
+    pub fn layer(
+        layers_storage_dir: &Path,
+        layer_name: &str,
     ) -> Result<Box<Lock>> {
-        let lock_file =
-            sandboxes_storage_dir.join(format!("{}.lock", sandbox_name));
+        let lock_file = layers_storage_dir.join(format!("{}.lock", layer_name));
         trace!("Acquiring lock {}", lock_file.display());
         let file = match OpenOptions::new()
             .create(true)
@@ -32,7 +31,7 @@ impl Lock {
             Err(e) => {
                 return Err(anyhow!(
                     "Failed to open lock file for layer {}: {}",
-                    sandbox_name,
+                    layer_name,
                     e
                 ));
             }

@@ -15,16 +15,16 @@ static CONFIG_TEST_MUTEX: Mutex<()> = Mutex::new(());
 #[rstest]
 fn test_network_options_in_help() -> Result<()> {
     // Verify that network options are properly displayed in help
-    let mut sandbox = SandboxManager::new();
+    let mut layer = LayerManager::new();
 
-    assert!(sandbox.pass(&["--help"]));
+    assert!(layer.pass(&["--help"]));
     assert!(
-        sandbox.last_stdout.contains("--net"),
+        layer.last_stdout.contains("--net"),
         "Help should contain --net option"
     );
     assert!(
-        sandbox.last_stdout.contains("none")
-            && sandbox.last_stdout.contains("host"),
+        layer.last_stdout.contains("none")
+            && layer.last_stdout.contains("host"),
         "Network options (none, host) should be visible in help"
     );
 
@@ -34,11 +34,11 @@ fn test_network_options_in_help() -> Result<()> {
 #[rstest]
 fn test_valid_config_formats() -> Result<()> {
     let _guard = CONFIG_TEST_MUTEX.lock().unwrap();
-    let mut sandbox = SandboxManager::new();
-    sandbox.no_sudo = true;
+    let mut layer = LayerManager::new();
+    layer.no_sudo = true;
 
     // Create a local config file in test directory
-    let test_dir = format!("generated-test-data/{}", sandbox.name);
+    let test_dir = format!("generated-test-data/{}", layer.name);
     fs::create_dir_all(&test_dir)?;
     let config_file = format!("{}/.devlayer.toml", test_dir);
 
@@ -61,23 +61,23 @@ fn test_valid_config_formats() -> Result<()> {
     for config in valid_configs.iter() {
         fs::write(&config_file, config)?;
 
-        let config_passed = sandbox.pass(&["config"]);
+        let config_passed = layer.pass(&["config"]);
 
         if config_passed {
             // For bind configs, verify they appear in the output
             if config.contains("bind") && config != r#"bind = null"# {
                 assert!(
-                    sandbox.last_stdout.contains("bind_mounts"),
+                    layer.last_stdout.contains("bind_mounts"),
                     "Config output should contain bind_mounts for config: {}",
                     config
                 );
             }
         } else {
             // If it fails due to permissions, that's OK
-            if !sandbox.last_stderr.contains("Insufficient permissions") {
+            if !layer.last_stderr.contains("Insufficient permissions") {
                 panic!(
                     "Valid config '{}' should not cause errors, got: {}",
-                    config, sandbox.last_stderr
+                    config, layer.last_stderr
                 );
             }
         }
@@ -89,12 +89,12 @@ fn test_valid_config_formats() -> Result<()> {
 #[rstest]
 fn test_config_file_locations() -> Result<()> {
     let _guard = CONFIG_TEST_MUTEX.lock().unwrap();
-    let mut sandbox = SandboxManager::new();
-    sandbox.no_sudo = true;
+    let mut layer = LayerManager::new();
+    layer.no_sudo = true;
 
-    // Test that sandbox looks for config in the right places
-    // 1. .sandbox.toml in current directory
-    let test_dir = format!("generated-test-data/{}", sandbox.name);
+    // Test that layer looks for config in the right places
+    // 1. .layer.toml in current directory
+    let test_dir = format!("generated-test-data/{}", layer.name);
     fs::create_dir_all(&test_dir)?;
     let local_config = format!("{}/.devlayer.toml", test_dir);
     fs::write(&local_config, r#"log_level = "TRACE""#)?;
@@ -103,9 +103,9 @@ fn test_config_file_locations() -> Result<()> {
     let original_dir = std::env::current_dir()?;
     std::env::set_current_dir(&test_dir)?;
 
-    if sandbox.pass(&["config"]) {
+    if layer.pass(&["config"]) {
         assert!(
-            sandbox.last_stdout.contains("TRACE"),
+            layer.last_stdout.contains("TRACE"),
             "Should pick up local .devlayer.toml config"
         );
     }
@@ -113,9 +113,9 @@ fn test_config_file_locations() -> Result<()> {
     // Don't change back yet, we need to test precedence
 
     // 2. Test precedence - CLI args should override config file
-    if sandbox.pass(&["--log-level", "ERROR", "config"]) {
+    if layer.pass(&["--log-level", "ERROR", "config"]) {
         assert!(
-            sandbox.last_stdout.contains("ERROR"),
+            layer.last_stdout.contains("ERROR"),
             "CLI args should override config file"
         );
     }

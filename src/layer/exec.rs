@@ -1,5 +1,5 @@
 #![allow(static_mut_refs)]
-use crate::sandbox::Sandbox;
+use crate::layer::Layer;
 use crate::util::drop_privileges;
 use anyhow::{Context, Result, anyhow};
 use libc::syscall;
@@ -17,9 +17,9 @@ unsafe extern "C" {
     fn __llvm_profile_set_filename(filename: *const i8);
 }
 
-impl Sandbox {
+impl Layer {
     /**
-     * Exec within the provided sandbox. This function never returns on
+     * Exec within the provided layer. This function never returns on
      * success.
      */
     pub fn exec(&self, command: &[String]) -> Result<()> {
@@ -34,16 +34,16 @@ impl Sandbox {
             | libc::CLONE_NEWUTS;
 
         #[cfg(feature = "coverage")]
-        let ns_flags = if std::env::var_os("TEST_UNABLE_TO_JOIN_SANDBOX")
+        let ns_flags = if std::env::var_os("TEST_UNABLE_TO_JOIN_LAYER")
             .is_some()
         {
-            // in this test case we are failing to enter a sandbox so our
-            // .profraw file will be outside of the sandbox, so we'll place
+            // in this test case we are failing to enter a layer so our
+            // .profraw file will be outside of the layer, so we'll place
             // it directly where we want it for coverage analysis
             unsafe {
                 __llvm_profile_set_filename(
                     CString::new(
-                        format!("coverage/profraw/join-sandbox-failure-{}-{}-%m.profraw",
+                        format!("coverage/profraw/join-layer-failure-{}-{}-%m.profraw",
                             self.pid,
                             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
                                 .context("Failed to get current time")?
@@ -82,12 +82,12 @@ impl Sandbox {
             libc::prctl(libc::PR_SET_DUMPABLE, 1);
         };
 
-        /* Join the sandbox's cgroup so we're subject to its resource limits.
-         * This needs to happen before we enter the sandbox's mount namespace,
+        /* Join the layer's cgroup so we're subject to its resource limits.
+         * This needs to happen before we enter the layer's mount namespace,
          * where the cgroup filesystem is read-only. */
         self.join_cgroup()?;
 
-        /* Join the sandbox namespaces */
+        /* Join the layer namespaces */
         let pid_fd = pidfd_open(self.pid, 0)?;
         if (unsafe { setns(pid_fd, ns_flags) }) != 0 {
             return Err(anyhow!(
@@ -96,11 +96,11 @@ impl Sandbox {
             ));
         }
 
-        // Enter the sandbox mount namespace
-        chdir("/").context(format!("failed to chdir to /"))?; // This will be the sandbox root
-        chroot(".").context(format!("failed to chroot to ."))?; // Now we fully enter the sandbox namespace
+        // Enter the layer mount namespace
+        chdir("/").context(format!("failed to chdir to /"))?; // This will be the layer root
+        chroot(".").context(format!("failed to chroot to ."))?; // Now we fully enter the layer namespace
 
-        /* Restore our CWD to be within our sandbox */
+        /* Restore our CWD to be within our layer */
         trace!("Setting CWD to {}", cwd.display());
         std::env::set_current_dir(&cwd)
             .context(format!("failed to set CWD to {}", cwd.display()))?;

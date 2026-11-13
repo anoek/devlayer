@@ -7,8 +7,8 @@ use anyhow::Result;
 use fixtures::*;
 use rstest::*;
 
-// Find all .profraw files in the sub-sandboxes upper and copy them over to coverage/profraw
-fn copy_sub_sandbox_profraw(sub_dir: &Path) -> Result<()> {
+// Find all .profraw files in the sub-layers upper and copy them over to coverage/profraw
+fn copy_sub_layer_profraw(sub_dir: &Path) -> Result<()> {
     println!("sub_dir: {}", sub_dir.display());
     let sub_upper = sub_dir.join("upper");
 
@@ -40,23 +40,21 @@ fn copy_sub_sandbox_profraw(sub_dir: &Path) -> Result<()> {
 }
 
 #[rstest]
-fn test_overlayfs_stack_depth_message(
-    mut sandbox: SandboxManager,
-) -> Result<()> {
-    sandbox.set_debug_mode(true);
-    let sandbox_bin = get_sandbox_bin() + "-setuid";
+fn test_overlayfs_stack_depth_message(mut layer: LayerManager) -> Result<()> {
+    layer.set_debug_mode(true);
+    let devlayer_bin = get_devlayer_bin() + "-setuid";
 
-    assert!(sandbox.xfail(&[&sandbox_bin, &sandbox_bin, &sandbox_bin]));
+    assert!(layer.xfail(&[&devlayer_bin, &devlayer_bin, &devlayer_bin]));
     assert!(
-        sandbox
+        layer
             .all_stderr
             .contains("Maximum overlayfs stacking depth exceeded")
     );
 
-    let sub_dir = sandbox.run(&[&sandbox_bin, "config", "sandbox_dir"])?;
+    let sub_dir = layer.run(&[&devlayer_bin, "config", "layer_dir"])?;
     let sub_dir = String::from_utf8_lossy(&sub_dir.stdout).to_string();
     let sub_dir = sub_dir.trim().to_string();
 
-    copy_sub_sandbox_profraw(Path::new(&sub_dir))?;
+    copy_sub_layer_profraw(Path::new(&sub_dir))?;
     Ok(())
 }

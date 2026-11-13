@@ -10,17 +10,17 @@ use std::process::Command;
 // cspell:ignore файл filea fileb filex
 
 #[rstest]
-fn test_gitignore_functionality(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
+fn test_gitignore_functionality(mut layer: LayerManager) -> Result<()> {
+    layer.set_ignored(false); // Don't automatically add --ignored for gitignore tests
 
     // Create test directory using test_filename
-    let test_dir = sandbox.test_filename("gitignore-test-dir");
+    let test_dir = layer.test_filename("gitignore-test-dir");
     std::fs::create_dir_all(&test_dir)?;
 
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
-        format!("generated-test-data/{}/.gitignore", &sandbox.name);
-    sandbox.run(&[
+        format!("generated-test-data/{}/.gitignore", &layer.name);
+    layer.run(&[
         "sh",
         "-c",
         &format!("echo '!*/' > {}", parent_gitignore_path),
@@ -44,9 +44,9 @@ dir/*.tmp
 negate-me
 !negate-me/keep
 "#;
-    // Create .gitignore file within the sandbox
+    // Create .gitignore file within the layer
     let gitignore_path = Path::new(&test_dir).join(".gitignore");
-    sandbox.run(&[
+    layer.run(&[
         "sh",
         "-c",
         &format!(
@@ -74,7 +74,7 @@ negate-me
     let included_negate_keep = Path::new(&test_dir).join("negate-me/keep");
 
     // Create directories
-    sandbox.run(&[
+    layer.run(&[
         "mkdir",
         "-p",
         Path::new(&test_dir).join("ignored-dir").to_str().unwrap(),
@@ -96,12 +96,12 @@ negate-me
         &included_keep_tmp,
         &included_negate_keep,
     ] {
-        sandbox.run(&["touch", path.to_str().unwrap()])?;
+        layer.run(&["touch", path.to_str().unwrap()])?;
     }
 
     // 1) Run `status` WITHOUT the --ignored flag
-    sandbox.run(&["status", &test_dir])?;
-    let stdout = sandbox.last_stdout.clone();
+    layer.run(&["status", &test_dir])?;
+    let stdout = layer.last_stdout.clone();
     // Files that should be present
     for inc in [
         &included_file,
@@ -117,11 +117,11 @@ negate-me
         assert!(!stdout.contains(ign.to_str().unwrap()));
     }
 
-    // 2) Run `status` WITH the --ignored flag via SandboxManager
-    sandbox.set_ignored(true);
-    sandbox.run(&["status", &test_dir])?;
-    let stdout_flag = sandbox.last_stdout.clone();
-    sandbox.set_ignored(false);
+    // 2) Run `status` WITH the --ignored flag via LayerManager
+    layer.set_ignored(true);
+    layer.run(&["status", &test_dir])?;
+    let stdout_flag = layer.last_stdout.clone();
+    layer.set_ignored(false);
     // Now every file should appear because we are passing --ignored implicitly
     for path in [
         &ignored_file,
@@ -143,21 +143,21 @@ negate-me
 
 #[rstest]
 fn test_gitignore_double_asterisk_patterns(
-    mut sandbox: SandboxManager,
+    mut layer: LayerManager,
 ) -> Result<()> {
-    sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
+    layer.set_ignored(false); // Don't automatically add --ignored for gitignore tests
 
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
-        format!("generated-test-data/{}/.gitignore", &sandbox.name);
-    sandbox.run(&[
+        format!("generated-test-data/{}/.gitignore", &layer.name);
+    layer.run(&[
         "sh",
         "-c",
         &format!("echo '!*/' > {}", parent_gitignore_path),
     ])?;
 
     // Create test directory using test_filename
-    let test_dir = sandbox.test_filename("double-asterisk-test");
+    let test_dir = layer.test_filename("double-asterisk-test");
     std::fs::create_dir_all(&test_dir)?;
 
     let gitignore_contents = r#"
@@ -170,9 +170,9 @@ fn test_gitignore_double_asterisk_patterns(
 # Match any file under docs
 docs/**
 "#;
-    // Create .gitignore file within the sandbox
+    // Create .gitignore file within the layer
     let gitignore_path = Path::new(&test_dir).join(".gitignore");
-    sandbox.run(&[
+    layer.run(&[
         "sh",
         "-c",
         &format!(
@@ -206,7 +206,7 @@ docs/**
     ];
 
     // Create all directories needed
-    sandbox.run(&[
+    layer.run(&[
         "mkdir",
         "-p",
         Path::new(&test_dir).join("foo").to_str().unwrap(),
@@ -228,12 +228,12 @@ docs/**
 
     // Create all files
     for file in ignored_files.iter().chain(included_files.iter()) {
-        sandbox.run(&["touch", file.to_str().unwrap()])?;
+        layer.run(&["touch", file.to_str().unwrap()])?;
     }
 
     // Test without --ignored flag
-    sandbox.run(&["status", &test_dir])?;
-    let stdout = sandbox.last_stdout.clone();
+    layer.run(&["status", &test_dir])?;
+    let stdout = layer.last_stdout.clone();
 
     // Verify included files are shown
     for file in &included_files {
@@ -257,31 +257,31 @@ docs/**
 }
 
 #[rstest]
-fn test_gitignore_hierarchy(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
+fn test_gitignore_hierarchy(mut layer: LayerManager) -> Result<()> {
+    layer.set_ignored(false); // Don't automatically add --ignored for gitignore tests
 
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
-        format!("generated-test-data/{}/.gitignore", &sandbox.name);
-    sandbox.run(&[
+        format!("generated-test-data/{}/.gitignore", &layer.name);
+    layer.run(&[
         "sh",
         "-c",
         &format!("echo '!*/' > {}", parent_gitignore_path),
     ])?;
 
     // Create test directory using test_filename
-    let test_dir = sandbox.test_filename("hierarchy-test");
+    let test_dir = layer.test_filename("hierarchy-test");
     std::fs::create_dir_all(Path::new(&test_dir).join("subdir/deep"))?;
 
     // Root .gitignore
-    sandbox.run(&[
+    layer.run(&[
         "sh",
         "-c",
         &format!("echo '*.root' > {}/.gitignore", test_dir),
     ])?;
 
     // Subdirectory with its own .gitignore
-    sandbox.run(&[
+    layer.run(&[
         "sh",
         "-c",
         &format!(
@@ -291,7 +291,7 @@ fn test_gitignore_hierarchy(mut sandbox: SandboxManager) -> Result<()> {
     ])?;
 
     // Deeper subdirectory
-    sandbox.run(&[
+    layer.run(&[
         "sh",
         "-c",
         &format!("echo '*.deep' > {}/subdir/deep/.gitignore", test_dir),
@@ -312,11 +312,11 @@ fn test_gitignore_hierarchy(mut sandbox: SandboxManager) -> Result<()> {
     ];
 
     for (file, _) in &test_files {
-        sandbox.run(&["touch", file.to_str().unwrap()])?;
+        layer.run(&["touch", file.to_str().unwrap()])?;
     }
 
-    sandbox.run(&["status", &test_dir])?;
-    let stdout = sandbox.last_stdout.clone();
+    layer.run(&["status", &test_dir])?;
+    let stdout = layer.last_stdout.clone();
 
     for (file, should_be_ignored) in &test_files {
         if *should_be_ignored {
@@ -338,20 +338,20 @@ fn test_gitignore_hierarchy(mut sandbox: SandboxManager) -> Result<()> {
 }
 
 #[rstest]
-fn test_gitignore_special_patterns(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
+fn test_gitignore_special_patterns(mut layer: LayerManager) -> Result<()> {
+    layer.set_ignored(false); // Don't automatically add --ignored for gitignore tests
 
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
-        format!("generated-test-data/{}/.gitignore", &sandbox.name);
-    sandbox.run(&[
+        format!("generated-test-data/{}/.gitignore", &layer.name);
+    layer.run(&[
         "sh",
         "-c",
         &format!("echo '!*/' > {}", parent_gitignore_path),
     ])?;
 
     // Create test directory using test_filename
-    let test_dir = sandbox.test_filename("special-patterns-test");
+    let test_dir = layer.test_filename("special-patterns-test");
     std::fs::create_dir_all(&test_dir)?;
 
     let gitignore_contents = r#"
@@ -375,7 +375,7 @@ trailing.txt
 path\ with\ spaces/
 "#;
     let gitignore_path = Path::new(&test_dir).join(".gitignore");
-    sandbox.run(&[
+    layer.run(&[
         "sh",
         "-c",
         &format!(
@@ -413,7 +413,7 @@ path\ with\ spaces/
     ];
 
     // Create directories
-    sandbox.run(&[
+    layer.run(&[
         "mkdir",
         "-p",
         Path::new(&test_dir)
@@ -421,7 +421,7 @@ path\ with\ spaces/
             .to_str()
             .unwrap(),
     ])?;
-    sandbox.run(&[
+    layer.run(&[
         "mkdir",
         "-p",
         Path::new(&test_dir)
@@ -432,11 +432,11 @@ path\ with\ spaces/
 
     // Create all files
     for file in ignored_files.iter().chain(included_files.iter()) {
-        sandbox.run(&["touch", file.to_str().unwrap()])?;
+        layer.run(&["touch", file.to_str().unwrap()])?;
     }
 
-    sandbox.run(&["status", &test_dir])?;
-    let stdout = sandbox.last_stdout.clone();
+    layer.run(&["status", &test_dir])?;
+    let stdout = layer.last_stdout.clone();
 
     for file in &included_files {
         assert!(
@@ -458,22 +458,20 @@ path\ with\ spaces/
 }
 
 #[rstest]
-fn test_gitignore_directory_patterns(
-    mut sandbox: SandboxManager,
-) -> Result<()> {
-    sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
+fn test_gitignore_directory_patterns(mut layer: LayerManager) -> Result<()> {
+    layer.set_ignored(false); // Don't automatically add --ignored for gitignore tests
 
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
-        format!("generated-test-data/{}/.gitignore", &sandbox.name);
-    sandbox.run(&[
+        format!("generated-test-data/{}/.gitignore", &layer.name);
+    layer.run(&[
         "sh",
         "-c",
         &format!("echo '!*/' > {}", parent_gitignore_path),
     ])?;
 
     // Create test directory using test_filename
-    let test_dir = sandbox.test_filename("directory-patterns-test");
+    let test_dir = layer.test_filename("directory-patterns-test");
     std::fs::create_dir_all(&test_dir)?;
 
     let gitignore_contents = r#"
@@ -487,7 +485,7 @@ temp
 **/node_modules/
 "#;
     let gitignore_path = Path::new(&test_dir).join(".gitignore");
-    sandbox.run(&[
+    layer.run(&[
         "sh",
         "-c",
         &format!(
@@ -498,7 +496,7 @@ temp
     ])?;
 
     // Create directory structure
-    sandbox.run(&[
+    layer.run(&[
         "mkdir",
         "-p",
         Path::new(&test_dir).join("build").to_str().unwrap(),
@@ -535,11 +533,11 @@ temp
 
     // Create files
     for (file, _) in &test_files {
-        sandbox.run(&["touch", file.to_str().unwrap()])?;
+        layer.run(&["touch", file.to_str().unwrap()])?;
     }
 
-    sandbox.run(&["status", &test_dir])?;
-    let stdout = sandbox.last_stdout.clone();
+    layer.run(&["status", &test_dir])?;
+    let stdout = layer.last_stdout.clone();
 
     for (file, should_be_ignored) in &test_files {
         if *should_be_ignored {
@@ -561,20 +559,20 @@ temp
 }
 
 #[rstest]
-fn test_gitignore_complex_negation(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
+fn test_gitignore_complex_negation(mut layer: LayerManager) -> Result<()> {
+    layer.set_ignored(false); // Don't automatically add --ignored for gitignore tests
 
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
-        format!("generated-test-data/{}/.gitignore", &sandbox.name);
-    sandbox.run(&[
+        format!("generated-test-data/{}/.gitignore", &layer.name);
+    layer.run(&[
         "sh",
         "-c",
         &format!("echo '!*/' > {}", parent_gitignore_path),
     ])?;
 
     // Create test directory using test_filename
-    let test_dir = sandbox.test_filename("complex-negation-test");
+    let test_dir = layer.test_filename("complex-negation-test");
     std::fs::create_dir_all(&test_dir)?;
 
     let gitignore_contents = r#"
@@ -592,7 +590,7 @@ logs/*error*.gz
 # But do ignore backup data files even in config
 config/*.data.bak
 "#;
-    sandbox.run(&[
+    layer.run(&[
         "sh",
         "-c",
         &format!(
@@ -602,7 +600,7 @@ config/*.data.bak
         ),
     ])?;
 
-    sandbox.run(&[
+    layer.run(&[
         "mkdir",
         "-p",
         Path::new(&test_dir).join("logs").to_str().unwrap(),
@@ -625,11 +623,11 @@ config/*.data.bak
     ];
 
     for (file, _) in &test_files {
-        sandbox.run(&["touch", file.to_str().unwrap()])?;
+        layer.run(&["touch", file.to_str().unwrap()])?;
     }
 
-    sandbox.run(&["status", &test_dir])?;
-    let stdout = sandbox.last_stdout.clone();
+    layer.run(&["status", &test_dir])?;
+    let stdout = layer.last_stdout.clone();
 
     for (file, should_be_ignored) in &test_files {
         if *should_be_ignored {
@@ -650,24 +648,24 @@ config/*.data.bak
     Ok(())
 }
 
-/// Verify that the SANDBOX_IGNORED environment variable enables inclusion of
+/// Verify that the LAYER_IGNORED environment variable enables inclusion of
 /// ignored files even when the --ignored CLI flag is not provided.
 #[rstest]
-fn test_env_flag_includes_ignored(mut sandbox: SandboxManager) -> Result<()> {
+fn test_env_flag_includes_ignored(mut layer: LayerManager) -> Result<()> {
     // Create test directory using test_filename
-    let test_dir = sandbox.test_filename("env-ignore-test");
+    let test_dir = layer.test_filename("env-ignore-test");
     std::fs::create_dir_all(&test_dir)?;
 
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
-        format!("generated-test-data/{}/.gitignore", &sandbox.name);
-    sandbox.run(&[
+        format!("generated-test-data/{}/.gitignore", &layer.name);
+    layer.run(&[
         "sh",
         "-c",
         &format!("echo '!*/' > {}", parent_gitignore_path),
     ])?;
 
-    sandbox.run(&[
+    layer.run(&[
         "sh",
         "-c",
         &format!("echo 'ignored-file' > {}/.gitignore", test_dir),
@@ -677,60 +675,56 @@ fn test_env_flag_includes_ignored(mut sandbox: SandboxManager) -> Result<()> {
     let included_file = Path::new(&test_dir).join("included");
 
     // Create the files (using --ignored via helper, fine for creation phase)
-    sandbox.run(&["touch", ignored_file.to_str().unwrap()])?;
-    sandbox.run(&["touch", included_file.to_str().unwrap()])?;
+    layer.run(&["touch", ignored_file.to_str().unwrap()])?;
+    layer.run(&["touch", included_file.to_str().unwrap()])?;
 
     // Call `status` WITHOUT any env var or flag - should not show ignored files
-    sandbox.set_ignored(false); // Temporarily disable automatic --ignored
-    sandbox.run(&["status", &test_dir])?;
-    let stdout = sandbox.last_stdout.clone();
-    sandbox.set_ignored(true); // Reset back
+    layer.set_ignored(false); // Temporarily disable automatic --ignored
+    layer.run(&["status", &test_dir])?;
+    let stdout = layer.last_stdout.clone();
+    layer.set_ignored(true); // Reset back
     assert!(!stdout.contains(ignored_file.to_str().unwrap()));
     assert!(stdout.contains(included_file.to_str().unwrap()));
 
     // Call `status` WITHOUT the flag but WITH env var set to true
-    sandbox.set_ignored(false); // Disable automatic --ignored
-    sandbox.run_with_env(&["status", &test_dir], "DEVLAYER_IGNORED", "true")?;
-    let stdout = sandbox.last_stdout.clone();
-    sandbox.set_ignored(true); // Reset back
+    layer.set_ignored(false); // Disable automatic --ignored
+    layer.run_with_env(&["status", &test_dir], "DEVLAYER_IGNORED", "true")?;
+    let stdout = layer.last_stdout.clone();
+    layer.set_ignored(true); // Reset back
 
     // Both files should be reported now
     assert!(stdout.contains(ignored_file.to_str().unwrap()));
     assert!(stdout.contains(included_file.to_str().unwrap()));
 
-    // Invalid value for SANDBOX_IGNORED
-    sandbox.set_ignored(false); // Disable automatic --ignored
+    // Invalid value for LAYER_IGNORED
+    layer.set_ignored(false); // Disable automatic --ignored
     let result =
-        sandbox.run_with_env(&["status", &test_dir], "DEVLAYER_IGNORED", "cow");
-    sandbox.set_ignored(true); // Reset back
+        layer.run_with_env(&["status", &test_dir], "DEVLAYER_IGNORED", "cow");
+    layer.set_ignored(true); // Reset back
     assert!(
         result.is_err(),
         "Expected error for invalid DEVLAYER_IGNORED value"
     );
 
-    // False value for SANDBOX_IGNORED
-    sandbox.set_ignored(false); // Disable automatic --ignored
-    sandbox.run_with_env(
-        &["status", &test_dir],
-        "DEVLAYER_IGNORED",
-        "false",
-    )?;
-    let stdout = sandbox.last_stdout.clone();
-    sandbox.set_ignored(true); // Reset back
+    // False value for LAYER_IGNORED
+    layer.set_ignored(false); // Disable automatic --ignored
+    layer.run_with_env(&["status", &test_dir], "DEVLAYER_IGNORED", "false")?;
+    let stdout = layer.last_stdout.clone();
+    layer.set_ignored(true); // Reset back
     assert!(!stdout.contains(ignored_file.to_str().unwrap()));
     assert!(stdout.contains(included_file.to_str().unwrap()));
 
     // Override values for ignored - CLI flag should take precedence over env var
     // This one needs to stay as Command::new because we need to pass --ignored directly
     // and test that it overrides the env var
-    sandbox.set_ignored(false); // Disable automatic --ignored
+    layer.set_ignored(false); // Disable automatic --ignored
     let output = Command::new("sudo")
         .env("DEVLAYER_IGNORED", "false")
-        .args(["-E", &sandbox.sandbox_bin])
+        .args(["-E", &layer.devlayer_bin])
         .args([
             "-v",
             "--ignored",
-            &format!("--name={}", &sandbox.name),
+            &format!("--name={}", &layer.name),
             "status",
             &test_dir,
         ])
@@ -740,32 +734,32 @@ fn test_env_flag_includes_ignored(mut sandbox: SandboxManager) -> Result<()> {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains(ignored_file.to_str().unwrap()));
     assert!(stdout.contains(included_file.to_str().unwrap()));
-    sandbox.set_ignored(true); // Reset back
+    layer.set_ignored(true); // Reset back
 
     Ok(())
 }
 
 #[rstest]
-fn test_builtin_tmp_ignore(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
+fn test_builtin_tmp_ignore(mut layer: LayerManager) -> Result<()> {
+    layer.set_ignored(false); // Don't automatically add --ignored for gitignore tests
 
-    let test_dir = sandbox.test_filename("builtin_ignore");
+    let test_dir = layer.test_filename("builtin_ignore");
     fs::create_dir_all(&test_dir)?;
     let ignore_id = rid();
     let ignored_file = format!("{}/builtin-ignore-{}", test_dir, ignore_id);
 
-    sandbox.run(&["touch", &ignored_file])?;
+    layer.run(&["touch", &ignored_file])?;
 
-    sandbox.run(&["status", &test_dir])?;
-    let stdout = sandbox.last_stdout.clone();
+    layer.run(&["status", &test_dir])?;
+    let stdout = layer.last_stdout.clone();
 
     assert!(!stdout.contains(&format!("builtin-ignore-{}", ignore_id)));
 
     // with --ignored
-    sandbox.set_ignored(true);
-    sandbox.run(&["status", &test_dir])?;
-    let stdout_flag = sandbox.last_stdout.clone();
-    sandbox.set_ignored(false);
+    layer.set_ignored(true);
+    layer.run(&["status", &test_dir])?;
+    let stdout_flag = layer.last_stdout.clone();
+    layer.set_ignored(false);
 
     assert!(stdout_flag.contains(&format!("builtin-ignore-{}", ignore_id)));
 
@@ -773,20 +767,20 @@ fn test_builtin_tmp_ignore(mut sandbox: SandboxManager) -> Result<()> {
 }
 
 #[rstest]
-fn test_gitignore_edge_cases(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
+fn test_gitignore_edge_cases(mut layer: LayerManager) -> Result<()> {
+    layer.set_ignored(false); // Don't automatically add --ignored for gitignore tests
 
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
-        format!("generated-test-data/{}/.gitignore", &sandbox.name);
-    sandbox.run(&[
+        format!("generated-test-data/{}/.gitignore", &layer.name);
+    layer.run(&[
         "sh",
         "-c",
         &format!("echo '!*/' > {}", parent_gitignore_path),
     ])?;
 
     // Create test directory using test_filename
-    let test_dir = sandbox.test_filename("edge-cases-test");
+    let test_dir = layer.test_filename("edge-cases-test");
     std::fs::create_dir_all(&test_dir)?;
 
     let gitignore_contents = r#"
@@ -824,7 +818,7 @@ very/long/path/that/goes/on/and/on/and/on/and/on/and/on/and/on/file.txt
 *allow-file-that-starts-with-a-bang
 !!allow-file-that-starts-with-a-bang
 "#;
-    sandbox.run(&[
+    layer.run(&[
         "sh",
         "-c",
         &format!(
@@ -835,7 +829,7 @@ very/long/path/that/goes/on/and/on/and/on/and/on/and/on/and/on/file.txt
     ])?;
 
     // Create nested directories for path normalization test
-    sandbox.run(&["mkdir", "-p",
+    layer.run(&["mkdir", "-p",
         Path::new(&test_dir).join("path/to").to_str().unwrap(),
         Path::new(&test_dir).join("very/long/path/that/goes/on/and/on/and/on/and/on/and/on/and/on").to_str().unwrap()
     ])?;
@@ -864,11 +858,11 @@ very/long/path/that/goes/on/and/on/and/on/and/on/and/on/and/on/file.txt
     ];
 
     for (file, _) in &test_files {
-        sandbox.run(&["touch", file.to_str().unwrap()])?;
+        layer.run(&["touch", file.to_str().unwrap()])?;
     }
 
-    sandbox.run(&["status", &test_dir])?;
-    let stdout = sandbox.last_stdout.clone();
+    layer.run(&["status", &test_dir])?;
+    let stdout = layer.last_stdout.clone();
 
     for (file, should_be_ignored) in &test_files {
         if *should_be_ignored {
@@ -890,20 +884,20 @@ very/long/path/that/goes/on/and/on/and/on/and/on/and/on/and/on/file.txt
 }
 
 #[rstest]
-fn test_gitignore_case_sensitivity(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
+fn test_gitignore_case_sensitivity(mut layer: LayerManager) -> Result<()> {
+    layer.set_ignored(false); // Don't automatically add --ignored for gitignore tests
 
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
-        format!("generated-test-data/{}/.gitignore", &sandbox.name);
-    sandbox.run(&[
+        format!("generated-test-data/{}/.gitignore", &layer.name);
+    layer.run(&[
         "sh",
         "-c",
         &format!("echo '!*/' > {}", parent_gitignore_path),
     ])?;
 
     // Create test directory using test_filename
-    let test_dir = sandbox.test_filename("case-sensitivity-test");
+    let test_dir = layer.test_filename("case-sensitivity-test");
     std::fs::create_dir_all(&test_dir)?;
 
     // Git ignore patterns are case-sensitive on case-sensitive filesystems
@@ -914,7 +908,7 @@ README.md
 Build/
 "#;
     let gitignore_path = Path::new(&test_dir).join(".gitignore");
-    sandbox.run(&[
+    layer.run(&[
         "sh",
         "-c",
         &format!(
@@ -924,7 +918,7 @@ Build/
         ),
     ])?;
 
-    sandbox.run(&[
+    layer.run(&[
         "mkdir",
         "-p",
         Path::new(&test_dir).join("Build").to_str().unwrap(),
@@ -946,11 +940,11 @@ Build/
     ];
 
     for (file, _) in &test_files {
-        sandbox.run(&["touch", file.to_str().unwrap()])?;
+        layer.run(&["touch", file.to_str().unwrap()])?;
     }
 
-    sandbox.run(&["status", &test_dir])?;
-    let stdout = sandbox.last_stdout.clone();
+    layer.run(&["status", &test_dir])?;
+    let stdout = layer.last_stdout.clone();
 
     for (file, should_be_ignored) in &test_files {
         if *should_be_ignored {

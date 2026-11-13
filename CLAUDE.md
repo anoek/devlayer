@@ -79,4 +79,4 @@ to track file changes and allows selective acceptance of modifications.
 
 5. **Cross-Platform**: Supports x86_64 and aarch64 architectures with both GNU and musl libc variants.
 
-6. **New tests**: New tests should be added to the `tests/` directory with a filename prefixed with `ai_test_`. Most tests should use the default name provided by the SandboxManager, if you provide a name, it needs to be prefixed with `devlayer-coverage`.
+6. **New tests**: New tests should be added to the `tests/` directory with a filename prefixed with `ai_test_`. Most tests should use the default name provided by the LayerManager, if you provide a name, it needs to be prefixed with `devlayer-coverage`.

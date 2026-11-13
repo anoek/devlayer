@@ -1,12 +1,12 @@
-//! cgroup v2 support for limiting the CPU and memory available to a sandbox.
+//! cgroup v2 support for limiting the CPU and memory available to a layer.
 //!
-//! Sandboxes with resource limits get a cgroup at
-//! /sys/fs/cgroup/sandbox/<uid>-<name>. The sandbox's PID 1 is started in that
-//! cgroup, which also makes it the root of the sandbox's cgroup namespace, and
-//! every process that later joins the sandbox is moved into it.
+//! Layers with resource limits get a cgroup at
+//! /sys/fs/cgroup/layer/<uid>-<name>. The layer's PID 1 is started in that
+//! cgroup, which also makes it the root of the layer's cgroup namespace, and
+//! every process that later joins the layer is moved into it.
 
 use crate::config::Config;
-use crate::sandbox::{Sandbox, SandboxSettings, describe_limits};
+use crate::layer::{Layer, LayerSettings, describe_limits};
 use anyhow::{Context, Result, anyhow};
 use log::{debug, trace, warn};
 use std::os::fd::OwnedFd;
@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 const CGROUP_ROOT: &str = "/sys/fs/cgroup";
 const CPU_PERIOD_US: u64 = 100_000;
 
-/// The cgroup all sandbox cgroups are created in
+/// The cgroup all layer cgroups are created in
 fn cgroup_parent() -> String {
     let parent = String::from("devlayer");
 
@@ -27,7 +27,7 @@ fn cgroup_parent() -> String {
     parent
 }
 
-impl Sandbox {
+impl Layer {
     fn cgroup_name(&self) -> String {
         format!("{}-{}", self.uid, self.name)
     }
@@ -39,8 +39,8 @@ impl Sandbox {
     }
 
     /// Sets up our cgroup like create_cgroup, except that inside another
-    /// sandbox, where cgroups can't be managed, we warn and run without a
-    /// cgroup of our own. We're still in the outer sandbox's cgroup, so its
+    /// layer, where cgroups can't be managed, we warn and run without a
+    /// cgroup of our own. We're still in the outer layer's cgroup, so its
     /// limits continue to apply.
     pub(crate) fn create_cgroup_or_share_outer(
         &self,
@@ -51,10 +51,10 @@ impl Sandbox {
             Err(e) => e.context("Failed to set up resource limits"),
         };
 
-        // A nested sandbox's storage directory is the outer sandbox's data
-        // directory, which holds the outer sandbox's settings
+        // A nested layer's storage directory is the outer layer's data
+        // directory, which holds the outer layer's settings
         let outer_settings = config.storage_dir.join("settings.json");
-        let Ok(outer) = SandboxSettings::load_from_file(&outer_settings) else {
+        let Ok(outer) = LayerSettings::load_from_file(&outer_settings) else {
             return Err(error);
         };
 
@@ -111,9 +111,9 @@ impl Sandbox {
 
         let path = self.cgroup_path();
         if path.exists() {
-            // Left behind by a sandbox that wasn't stopped cleanly, which we
+            // Left behind by a layer that wasn't stopped cleanly, which we
             // can remove because it's empty. If it's not empty it belongs to
-            // a running sandbox with the same name in another storage dir.
+            // a running layer with the same name in another storage dir.
             std::fs::remove_dir(&path).context(format!(
                 "Failed to remove existing cgroup {}, is a layer with the same name running from a different storage directory?",
                 path.display()
@@ -145,7 +145,7 @@ impl Sandbox {
         }
         if let Some(memory) = config.memory {
             write_cgroup_file(path, "memory.max", &memory.to_string())?;
-            // Swap would let the sandbox use more memory than its limit, but
+            // Swap would let the layer use more memory than its limit, but
             // the file only exists when swap accounting is enabled.
             let swap_accounting = path.join("memory.swap.max").exists();
 
@@ -160,10 +160,10 @@ impl Sandbox {
         Ok(())
     }
 
-    /// Returns the path to our cgroup if our sandbox is running in one. We
+    /// Returns the path to our cgroup if our layer is running in one. We
     /// go by the cgroup our PID 1 is in rather than the name we'd give a new
     /// cgroup, because the uid in the name is that of the user who started
-    /// the sandbox, which isn't always ours (e.g. `delete` doesn't know it).
+    /// the layer, which isn't always ours (e.g. `delete` doesn't know it).
     pub(crate) fn running_cgroup(&self) -> Option<PathBuf> {
         let cgroups =
             std::fs::read_to_string(format!("/proc/{}/cgroup", self.pid))
@@ -178,8 +178,8 @@ impl Sandbox {
             .then(|| Path::new(CGROUP_ROOT).join(relative))
     }
 
-    /// Moves the current process into our sandbox's cgroup, if it has one,
-    /// so processes we launch in the sandbox are subject to its limits.
+    /// Moves the current process into our layer's cgroup, if it has one,
+    /// so processes we launch in the layer are subject to its limits.
     pub(crate) fn join_cgroup(&self) -> Result<()> {
         if let Some(path) = self.running_cgroup() {
             trace!("Joining cgroup {}", path.display());
@@ -191,8 +191,8 @@ impl Sandbox {
 }
 
 /// Removes a cgroup once the processes in it have exited, waiting a little
-/// while for that. Sandbox processes have already been killed by this point.
-/// The only other processes in the cgroup are the `sandbox` commands waiting
+/// while for that. Layer processes have already been killed by this point.
+/// The only other processes in the cgroup are the `layer` commands waiting
 /// on them, which exit by themselves once their child is gone, so they get to
 /// report its exit status instead of being killed too.
 pub(crate) fn remove_cgroup(path: &Path) {

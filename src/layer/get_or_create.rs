@@ -1,12 +1,12 @@
 use super::cgroup::remove_cgroup;
 use super::mount_overlays::MountHash;
 use crate::config::{BindMount, BindMountOptions, Config, Network};
-use crate::sandbox::Sandbox;
+use crate::layer::Layer;
 #[cfg(feature = "coverage")]
 use crate::util::CLONE_FS;
 use crate::util::Lock;
-use crate::util::get_running_sandbox_pid;
-use crate::util::get_sandbox_pid_path;
+use crate::util::get_layer_pid_path;
+use crate::util::get_running_layer_pid;
 use crate::util::{
     CLONE_INTO_CGROUP, CLONE_NEWCGROUP, CLONE_NEWIPC, CLONE_NEWNET,
     CLONE_NEWNS, CLONE_NEWPID, CLONE_NEWUTS, Clone3Args,
@@ -40,23 +40,23 @@ unsafe extern "C" {
 
 const TMPFS_SIZE: i32 = 64 * 1024 * 1024; // 64MB, because that's what docker does
 
-impl Sandbox {
+impl Layer {
     pub fn from_location(
-        sandboxes_storage_dir: &Path,
-        sandbox_name: &str,
+        layers_storage_dir: &Path,
+        layer_name: &str,
         uid: Uid,
         gid: Gid,
-    ) -> Sandbox {
+    ) -> Layer {
         let root_suffix = data_encoding::BASE32_NOPAD.encode(b"/");
-        let sandbox_base_dir = sandboxes_storage_dir.join(sandbox_name);
-        let work_base = sandbox_base_dir.join("work");
-        let upper_base = sandbox_base_dir.join("upper");
-        let overlay_base = sandbox_base_dir.join("overlay");
-        let data_base = sandbox_base_dir.join("data");
+        let layer_base_dir = layers_storage_dir.join(layer_name);
+        let work_base = layer_base_dir.join("work");
+        let upper_base = layer_base_dir.join("upper");
+        let overlay_base = layer_base_dir.join("overlay");
+        let data_base = layer_base_dir.join("data");
 
-        Sandbox {
-            name: sandbox_name.to_string(),
-            base: sandbox_base_dir.clone(),
+        Layer {
+            name: layer_name.to_string(),
+            base: layer_base_dir.clone(),
             work_base: work_base.clone(),
             upper_base: upper_base.clone(),
             overlay_base: overlay_base.clone(),
@@ -69,48 +69,39 @@ impl Sandbox {
     }
 
     pub fn get(
-        sandboxes_storage_dir: &Path,
-        sandbox_name: &str,
+        layers_storage_dir: &Path,
+        layer_name: &str,
         uid: Uid,
         gid: Gid,
         lock: Option<Box<Lock>>,
-    ) -> Result<(Option<Sandbox>, Box<Lock>)> {
+    ) -> Result<(Option<Layer>, Box<Lock>)> {
         /* Lock so we don't have multiple processes trying to get at the same time */
         let lock = match lock {
             Some(l) => l,
-            None => Lock::sandbox(sandboxes_storage_dir, sandbox_name)
-                .context(format!("failed to lock layer: {}", sandbox_name))?,
+            None => Lock::layer(layers_storage_dir, layer_name)
+                .context(format!("failed to lock layer: {}", layer_name))?,
         };
 
-        let sandbox_base_dir = sandboxes_storage_dir.join(sandbox_name);
-        if !sandbox_base_dir.exists() {
+        let layer_base_dir = layers_storage_dir.join(layer_name);
+        if !layer_base_dir.exists() {
             return Ok((None, lock));
         }
 
-        /* If we have an existing sandbox, return it */
-        if let Some(pid) =
-            get_running_sandbox_pid(sandboxes_storage_dir, sandbox_name)
+        /* If we have an existing layer, return it */
+        if let Some(pid) = get_running_layer_pid(layers_storage_dir, layer_name)
         {
-            let mut sandbox = Sandbox::from_location(
-                sandboxes_storage_dir,
-                sandbox_name,
-                uid,
-                gid,
-            );
-            sandbox.pid = pid;
-            return Ok((Some(sandbox), lock));
+            let mut layer =
+                Layer::from_location(layers_storage_dir, layer_name, uid, gid);
+            layer.pid = pid;
+            return Ok((Some(layer), lock));
         }
 
         Ok((None, lock))
     }
 
-    pub fn get_or_create(
-        config: &Config,
-        uid: Uid,
-        gid: Gid,
-    ) -> Result<Sandbox> {
+    pub fn get_or_create(config: &Config, uid: Uid, gid: Gid) -> Result<Layer> {
         let storage_dir = &config.storage_dir;
-        let sandbox_name = &config.name;
+        let layer_name = &config.name;
         /* Ensure that the storage directory exists */
         mkdir(storage_dir, uid, gid).context(format!(
             "failed to create storage directory: {}",
@@ -118,31 +109,31 @@ impl Sandbox {
         ))?;
 
         /* First lock so we don't have multiple processes trying to get_or_create at the same time */
-        let lock = Lock::sandbox(storage_dir, sandbox_name)
-            .context(format!("failed to lock layer: {}", sandbox_name))?;
+        let lock = Lock::layer(storage_dir, layer_name)
+            .context(format!("failed to lock layer: {}", layer_name))?;
 
-        /* If we have an existing sandbox, return it */
-        let (sandbox, _lock) =
-            Sandbox::get(storage_dir, sandbox_name, uid, gid, Some(lock))?;
+        /* If we have an existing layer, return it */
+        let (layer, _lock) =
+            Layer::get(storage_dir, layer_name, uid, gid, Some(lock))?;
 
-        if let Some(sandbox) = sandbox {
-            // Validate that the existing sandbox settings are compatible with current config
-            let settings_path = sandbox.settings_path();
+        if let Some(layer) = layer {
+            // Validate that the existing layer settings are compatible with current config
+            let settings_path = layer.settings_path();
             if settings_path.exists() {
-                match crate::sandbox::SandboxSettings::load_from_file(
+                match crate::layer::LayerSettings::load_from_file(
                     &settings_path,
                 ) {
                     Ok(existing_settings) => {
                         // Determine what the current mounts should be
-                        let expected_mounts = sandbox.determine_mounts(config)
+                        let expected_mounts = layer.determine_mounts(config)
                             .context("Failed to determine expected mounts for validation")?;
 
                         // Create a config that includes the implicit data bind mount for validation
                         let mut validation_config = config.clone();
                         validation_config.bind_mounts.push(BindMount {
                             argument: "data".to_string(),
-                            source: sandbox.data_storage_dir.clone(),
-                            target: sandbox.data_storage_dir.clone(),
+                            source: layer.data_storage_dir.clone(),
+                            target: layer.data_storage_dir.clone(),
                             options: BindMountOptions::ReadWrite,
                         });
 
@@ -161,19 +152,18 @@ impl Sandbox {
                     }
                 }
             }
-            return Ok(sandbox);
+            return Ok(layer);
         }
 
         /*
-         * Otherwise, create a new sandbox
+         * Otherwise, create a new layer
          */
-        let mut sandbox =
-            Sandbox::from_location(storage_dir, sandbox_name, uid, gid);
+        let mut layer = Layer::from_location(storage_dir, layer_name, uid, gid);
 
         trace!(
             "Creating new layer '{}': {}",
-            sandbox_name,
-            sandbox.base.display()
+            layer_name,
+            layer.base.display()
         );
 
         /* Sanity check our storage path*/
@@ -187,56 +177,56 @@ impl Sandbox {
         let mut config = config.clone();
         config.bind_mounts.push(BindMount {
             argument: "data".to_string(),
-            source: sandbox.data_storage_dir.clone(),
-            target: sandbox.data_storage_dir.clone(),
+            source: layer.data_storage_dir.clone(),
+            target: layer.data_storage_dir.clone(),
             options: BindMountOptions::ReadWrite,
         });
 
         /* Create a cgroup to enforce any resource limits. We do this first
          * so we fail before mounting anything if limits aren't available. */
-        let cgroup = sandbox.create_cgroup_or_share_outer(&config)?;
+        let cgroup = layer.create_cgroup_or_share_outer(&config)?;
 
         trace!("Mounting layer");
-        let started = sandbox
+        let started = layer
             .mount_overlays(&config)
-            .context(format!("failed to mount layer: {}", sandbox_name))
+            .context(format!("failed to mount layer: {}", layer_name))
             .and_then(|overlay_mounts| {
-                /* Create PID 1 for our sandbox */
-                sandbox
-                    .start_sandbox(
+                /* Create PID 1 for our layer */
+                layer
+                    .start_layer(
                         &config,
-                        &get_sandbox_pid_path(storage_dir, sandbox_name),
+                        &get_layer_pid_path(storage_dir, layer_name),
                         &overlay_mounts,
                         cgroup.as_ref(),
                     )
                     .map_err(|e| anyhow!("Failed to start layer: {}", e))
             });
 
-        sandbox.pid = match started {
+        layer.pid = match started {
             Ok(pid) => pid,
             Err(e) => {
                 if cgroup.is_some() {
-                    remove_cgroup(&sandbox.cgroup_path());
+                    remove_cgroup(&layer.cgroup_path());
                 }
                 return Err(e);
             }
         };
 
-        Ok(sandbox)
+        Ok(layer)
     }
 
     /**
      * This launches a new process with new namespaces. The process will go to sleep
      * but stick around to allow future processes to be launched in the same namespaces.
      */
-    fn start_sandbox(
+    fn start_layer(
         &self,
         config: &Config,
         pid_file: &PathBuf,
         overlay_mounts: &Vec<MountHash>,
         cgroup: Option<&OwnedFd>,
     ) -> Result<Pid> {
-        // create a pipe between ourselves and the main sandbox process so the main sandbox process can
+        // create a pipe between ourselves and the main layer process so the main layer process can
         // let us know when it's done setting up the namespaces
         let (read_fd, write_fd) =
             pipe().context("failed to create pipe for layer")?;
@@ -262,7 +252,7 @@ impl Sandbox {
 
         #[cfg(feature = "coverage")]
         let clone_args =
-            if std::env::var_os("TEST_START_SANDBOX_FAILURE").is_some() {
+            if std::env::var_os("TEST_START_LAYER_FAILURE").is_some() {
                 let mut new_args = clone_args.clone();
                 new_args.flags |= CLONE_FS; // invalid flag combination with NEWNS
                 new_args
@@ -306,7 +296,7 @@ impl Sandbox {
 
             // Normal operation is that this doesn't return.
             let _ = self
-                .setup_sandbox_and_sleep_forever(
+                .setup_layer_and_sleep_forever(
                     config,
                     &write_fd,
                     overlay_mounts,
@@ -324,9 +314,9 @@ impl Sandbox {
         }
     }
 
-    /* After forking via clone3, this is function gets called to finish setting up the sandbox.
+    /* After forking via clone3, this is function gets called to finish setting up the layer.
      * namespaces. It should never return, if it does it's an error. */
-    fn setup_sandbox_and_sleep_forever(
+    fn setup_layer_and_sleep_forever(
         &self,
         config: &Config,
         write_fd: &OwnedFd,
@@ -810,7 +800,7 @@ impl Sandbox {
             )?;
         }
 
-        /* Mask out certain things from /proc and /sys to help isolate the sandbox.
+        /* Mask out certain things from /proc and /sys to help isolate the layer.
          * These are based off of the things that docker masks out by default, see
          *
          * https://github.com/moby/moby/blob/master/oci/defaults.go
@@ -1019,7 +1009,7 @@ impl Sandbox {
         nix::unistd::sethostname(self.name.as_str())
             .context(format!("failed to set hostname: {}", self.name))?;
 
-        // send a byte over the pipe to signal that the sandbox is initialized and
+        // send a byte over the pipe to signal that the layer is initialized and
         // ready for use
         nix::unistd::write(write_fd, &[0])
             .context(format!("failed to write to layer ready pipe"))?;
@@ -1061,7 +1051,7 @@ impl Sandbox {
 
                     unsafe {
                         __llvm_profile_set_filename(
-                            CString::new(format!("coverage/profraw/setup_sandbox-{}-{}-%m.profraw", self.pid, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()).as_str(),)
+                            CString::new(format!("coverage/profraw/setup_layer-{}-{}-%m.profraw", self.pid, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()).as_str(),)
                                 .unwrap()
                                 .as_ptr(),
                         );

@@ -24,7 +24,7 @@ pub struct Args {
     pub log_level: Option<log::LevelFilter>,
 
     /// Name of the layer, defaults to "devlayer"
-    #[arg(long, global = true, value_hint = clap::ValueHint::Other, add = ArgValueCompleter::new(sandbox_name_completion), conflicts_with_all = &["new", "last"])]
+    #[arg(long, global = true, value_hint = clap::ValueHint::Other, add = ArgValueCompleter::new(layer_name_completion), conflicts_with_all = &["new", "last"])]
     pub name: Option<String>,
 
     /// Create a new layer with an auto-generated timestamp name
@@ -128,7 +128,7 @@ pub struct Args {
     pub action: Option<Action>,
 
     /*********************/
-    /* Sandboxed Command */
+    /* Layered Command */
     /*********************/
     /// The command to run in the layer. If no command is provided, the current shell will be used.
     /// If the layer is not running, it will be started with the command.
@@ -139,7 +139,7 @@ pub struct Args {
         value_parser = validate_command,
         help_heading = "Command",
     )]
-    pub sandboxed_command: Option<Vec<String>>,
+    pub layered_command: Option<Vec<String>>,
 }
 
 #[derive(clap::Subcommand, Clone, Debug)]
@@ -222,7 +222,7 @@ pub enum Action {
     },
 }
 
-pub fn sandbox_name_completion(
+pub fn layer_name_completion(
     current: &std::ffi::OsStr,
 ) -> Vec<CompletionCandidate> {
     let ugh = resolve_uid_gid_home();
@@ -245,9 +245,9 @@ pub fn sandbox_name_completion(
         Err(_) => return completions,
     };
 
-    let sandboxes_storage_dir = config.storage_dir;
+    let layers_storage_dir = config.storage_dir;
 
-    let entries = match std::fs::read_dir(sandboxes_storage_dir) {
+    let entries = match std::fs::read_dir(layers_storage_dir) {
         Ok(entries) => entries,
         Err(_) => return completions,
     };

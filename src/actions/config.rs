@@ -20,7 +20,7 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
             "cpus",
             "memory",
             "storage_dir",
-            "sandbox_dir",
+            "layer_dir",
             "upper_cwd",
             "overlay_cwd",
             "ignored",
@@ -68,10 +68,9 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
                 "storage_dir",
                 config.storage_dir.to_str().unwrap_or("<error>"),
             ),
-            "sandbox_dir" | "sandbox-dir" => (
-                "sandbox_dir",
-                config.sandbox_dir.to_str().unwrap_or("<error>"),
-            ),
+            "layer_dir" | "layer-dir" => {
+                ("layer_dir", config.layer_dir.to_str().unwrap_or("<error>"))
+            }
             "upper_cwd" | "upper-cwd" => {
                 ("upper_cwd", config.upper_cwd.to_str().unwrap_or("<error>"))
             }

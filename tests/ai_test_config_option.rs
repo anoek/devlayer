@@ -8,7 +8,7 @@ use std::fs;
 /// Test the --config CLI option behavior
 #[rstest]
 fn ai_test_config_option() -> Result<()> {
-    // Test config loading without running actual sandbox commands
+    // Test config loading without running actual layer commands
     // This tests the CLI parsing functionality directly
 
     // Create test config files
@@ -29,7 +29,7 @@ ignored = true
     fs::write(&config2_file, config2_content)?;
 
     // Test 1: --config conflicts with --no-config (using direct command)
-    let output = std::process::Command::new(get_sandbox_bin())
+    let output = std::process::Command::new(get_devlayer_bin())
         .args([
             "--config",
             config_file.to_str().unwrap(),
@@ -42,7 +42,7 @@ ignored = true
     assert!(stderr.contains("cannot be used with"));
 
     // Test 2: Error when config file doesn't exist
-    let output = std::process::Command::new(get_sandbox_bin())
+    let output = std::process::Command::new(get_devlayer_bin())
         .args(["--config", "/nonexistent/file.toml", "config"])
         .output()?;
     assert!(!output.status.success());
@@ -50,14 +50,14 @@ ignored = true
     assert!(stderr.contains("Config file not found"));
 
     // Test 3: Empty --config list means no config files loaded
-    let output = std::process::Command::new(get_sandbox_bin())
+    let output = std::process::Command::new(get_devlayer_bin())
         .args(["--config", "", "--help"])
         .output()?;
     assert!(output.status.success());
 
     // Test 4: Test that config action shows loaded config files
     // We need to use a working directory with an acceptable mount type
-    let output = std::process::Command::new(get_sandbox_bin())
+    let output = std::process::Command::new(get_devlayer_bin())
         .env("TEST_UNACCEPTABLE_MOUNT_TYPE", "") // Disable mount type check for test
         .args([
             "--config",

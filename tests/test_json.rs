@@ -5,12 +5,12 @@ use fixtures::*;
 use rstest::*;
 
 #[rstest]
-fn test_json(mut sandbox: SandboxManager) -> Result<()> {
-    let filename = sandbox.test_filename("file");
-    sandbox.run(&["touch", &filename])?;
-    sandbox.run(&["--json", "status", &filename])?;
+fn test_json(mut layer: LayerManager) -> Result<()> {
+    let filename = layer.test_filename("file");
+    layer.run(&["touch", &filename])?;
+    layer.run(&["--json", "status", &filename])?;
 
-    let json_output = sandbox.last_stdout.clone();
+    let json_output = layer.last_stdout.clone();
     let json: serde_json::Value = serde_json::from_str(&json_output)?;
     println!("json: {}", json);
     println!("changes: {}", json["changes"].as_array().unwrap().len());
@@ -30,8 +30,8 @@ fn test_json(mut sandbox: SandboxManager) -> Result<()> {
  * support json diff output that would be great but we'll have to figure
  * out another way to exercise that code. */
 #[rstest]
-fn test_json_diff(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.xfail(&["--json", "diff"]);
-    assert!(sandbox.last_stdout.contains("\"status\": \"error\""));
+fn test_json_diff(mut layer: LayerManager) -> Result<()> {
+    layer.xfail(&["--json", "diff"]);
+    assert!(layer.last_stdout.contains("\"status\": \"error\""));
     Ok(())
 }

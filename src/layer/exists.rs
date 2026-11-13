@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-use crate::sandbox::Sandbox;
+use crate::layer::Layer;
 
-impl Sandbox {
+impl Layer {
     pub fn exists(&self) -> bool {
         let pid_file = PathBuf::from(format!("{}.pid", self.base.display()));
         let lock_file = PathBuf::from(format!("{}.lock", self.base.display()));

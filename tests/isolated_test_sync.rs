@@ -6,16 +6,16 @@ use rstest::*;
 use std::path::PathBuf;
 
 #[rstest]
-fn test_sync(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.run(&["true"])?;
-    sandbox.run(&["config", "upper_cwd"])?;
-    let base = sandbox.last_stdout.trim();
+fn test_sync(mut layer: LayerManager) -> Result<()> {
+    layer.run(&["true"])?;
+    layer.run(&["config", "upper_cwd"])?;
+    let base = layer.last_stdout.trim();
     let upper_dir = PathBuf::from(base);
 
-    let t = sandbox.test_filename("test-file");
+    let t = layer.test_filename("test-file");
     std::fs::write(&t, "hello")?;
 
-    sandbox.run(&[
+    layer.run(&[
         "bash",
         "-c",
         format!("echo -n 'from layer echo' > {}", t.as_str()).as_str(),
@@ -23,8 +23,8 @@ fn test_sync(mut sandbox: SandboxManager) -> Result<()> {
 
     std::fs::write(&t, "goodbye")?;
 
-    sandbox.run(&["cat", t.clone().as_str()])?;
-    let stdout = sandbox.last_stdout.trim();
+    layer.run(&["cat", t.clone().as_str()])?;
+    let stdout = layer.last_stdout.trim();
     assert_eq!(stdout, "from layer echo");
 
     // remove the file from the upper directory
@@ -35,12 +35,12 @@ fn test_sync(mut sandbox: SandboxManager) -> Result<()> {
     ))?;
     assert!(PathBuf::from(&t).exists());
 
-    sandbox.run(&["sync"])?;
+    layer.run(&["sync"])?;
 
-    // after a sync, programs run in the sandbox should see the changes. Before, the results are
+    // after a sync, programs run in the layer should see the changes. Before, the results are
     // undefined.
-    sandbox.run(&["cat", t.clone().as_str()])?;
-    let stdout = sandbox.last_stdout.trim();
+    layer.run(&["cat", t.clone().as_str()])?;
+    let stdout = layer.last_stdout.trim();
     assert_eq!(stdout, "goodbye");
 
     Ok(())

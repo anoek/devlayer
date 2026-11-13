@@ -5,16 +5,16 @@ use std::path::PathBuf;
 use log::trace;
 
 /**
- * Get the PID of a running sandbox.
+ * Get the PID of a running layer.
  *
- * Returns None if the sandbox is not running.
+ * Returns None if the layer is not running.
  */
-pub fn get_running_sandbox_pid(
-    sandboxes_storage_dir: &Path,
-    sandbox_name: &str,
+pub fn get_running_layer_pid(
+    layers_storage_dir: &Path,
+    layer_name: &str,
 ) -> Option<Pid> {
-    let sandboxes_storage_dir = &PathBuf::from(sandboxes_storage_dir);
-    let pid_file = get_sandbox_pid_path(sandboxes_storage_dir, sandbox_name);
+    let layers_storage_dir = &PathBuf::from(layers_storage_dir);
+    let pid_file = get_layer_pid_path(layers_storage_dir, layer_name);
     if pid_file.exists() {
         match std::fs::read_to_string(&pid_file)
             .ok()
@@ -24,7 +24,7 @@ pub fn get_running_sandbox_pid(
             .and_then(|pid| {
                 trace!(
                     "Existing layer '{}' found with PID: {}",
-                    sandbox_name, pid
+                    layer_name, pid
                 );
 
                 std::fs::read_to_string(format!("/proc/{}/stat", pid.as_raw()))
@@ -51,9 +51,9 @@ pub fn get_running_sandbox_pid(
     None
 }
 
-pub fn get_sandbox_pid_path(
-    sandboxes_storage_dir: &Path,
-    sandbox_name: &str,
+pub fn get_layer_pid_path(
+    layers_storage_dir: &Path,
+    layer_name: &str,
 ) -> PathBuf {
-    sandboxes_storage_dir.join(format!("{}.pid", sandbox_name))
+    layers_storage_dir.join(format!("{}.pid", layer_name))
 }
