@@ -34,7 +34,7 @@ fn test_flags_before_action(mut layer: LayerManager) -> Result<()> {
     );
 
     // Test a simple action without extra flags
-    assert!(layer.pass(&["--join", &name, "status"]));
+    assert!(layer.pass(&["--join", &name, "status", "."]));
 
     Ok(())
 }
@@ -65,7 +65,7 @@ fn test_flags_after_action(mut layer: LayerManager) -> Result<()> {
     );
 
     // Test a simple action without extra flags
-    assert!(layer.pass(&["--join", &name, "status"]));
+    assert!(layer.pass(&["--join", &name, "status", "."]));
 
     Ok(())
 }

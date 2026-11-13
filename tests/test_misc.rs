@@ -10,11 +10,11 @@ use serde_json::Value;
 #[rstest]
 fn test_program_runs_with_no_args(mut layer: LayerManager) -> Result<()> {
     layer.run(&["env"])?;
-    layer.run(&["status"])?;
+    layer.run(&["status", "."])?;
     layer.run(&["touch", "testfile"])?;
-    layer.run(&["status"])?;
+    layer.run(&["status", "."])?;
     layer.run(&["list"])?;
-    layer.run(&["diff"])?;
+    layer.run(&["diff", "."])?;
     layer.run(&[])?; // should launch bash, which should exit without an input terminal
     Ok(())
 }
@@ -214,7 +214,7 @@ fn exercise_large_xattr(mut layer: LayerManager) -> Result<()> {
         .status()?;
 
     //assert!(status.success());
-    layer.run(&["status"])?;
+    layer.run(&["status", "."])?;
 
     Ok(())
 }

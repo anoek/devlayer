@@ -122,6 +122,12 @@ pub fn accept(
 ) -> Result<()> {
     trace!("Accepting changes from layer {}", layer.name);
 
+    if patterns.is_empty() {
+        return Err(anyhow::anyhow!(
+            "accept requires at least one pattern; use `devlayer accept /` to accept every change in the layer"
+        ));
+    }
+
     let cwd = std::env::current_dir()?;
     let all_changes = layer.changes(config)?;
 

@@ -176,7 +176,7 @@ fn test_delete_stopped_layer() -> Result<()> {
 
     // Stop the layer
     layer.run(&["stop"])?;
-    layer.run(&["accept"])?;
+    layer.run(&["accept", "."])?;
 
     // Delete the stopped layer
     layer.run_with_stdin(&["delete"], "y\n")?;
@@ -240,7 +240,7 @@ fn test_delete_stopped_layer_by_name() -> Result<()> {
 
     // Stop the layer
     layer.run(&["stop"])?;
-    layer.run(&["accept"])?;
+    layer.run(&["accept", "."])?;
 
     // Delete the stopped layer
     layer.run_with_stdin(&["delete", &name], "y\n")?;
@@ -269,7 +269,7 @@ fn test_delete_running_layer_by_name() -> Result<()> {
     layer.run(&["true"])?;
 
     // Accept the layer
-    layer.run(&["accept"])?;
+    layer.run(&["accept", "."])?;
 
     // Delete the running layer
     layer.run_with_stdin(&["delete", &name], "y\n")?;

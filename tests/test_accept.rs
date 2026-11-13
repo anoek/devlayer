@@ -71,7 +71,7 @@ fn test_accept_rename_file(mut layer: LayerManager) -> Result<()> {
     layer.run(&["mv", &filename, &new_filename])?;
     assert!(path.exists());
     assert!(!new_path.exists());
-    layer.run(&["accept"])?;
+    layer.run(&["accept", "."])?;
     assert!(!path.exists());
     assert!(new_path.exists());
     Ok(())
@@ -106,7 +106,7 @@ fn test_accept_rename_upper_directory(mut layer: LayerManager) -> Result<()> {
     assert!(!path.exists());
     assert!(!new_path.exists());
     layer.run(&["mv", &dirname, &new_dirname])?;
-    layer.run(&["accept"])?;
+    layer.run(&["accept", "."])?;
     assert!(!path.exists());
     assert!(new_path.exists());
     Ok(())
@@ -124,7 +124,7 @@ fn test_accept_rename_lower_directory(mut layer: LayerManager) -> Result<()> {
     layer.run(&["mv", &dirname, &new_dirname])?;
     assert!(path.exists());
     assert!(!new_path.exists());
-    layer.run(&["accept"])?;
+    layer.run(&["accept", "."])?;
     assert!(!path.exists());
     assert!(new_path.exists());
     Ok(())
@@ -145,7 +145,7 @@ fn test_accept_rename_lower_directory_with_stuff(
     layer.run(&["mv", &dirname, &new_dirname])?;
     assert!(path.exists());
     assert!(!new_path.exists());
-    layer.run(&["accept"])?;
+    layer.run(&["accept", "."])?;
     assert!(!path.exists());
     assert!(new_path.exists());
     assert!(new_path.join("test-file").exists());
@@ -192,7 +192,7 @@ fn test_accept_rename_symlink(mut layer: LayerManager) -> Result<()> {
     layer.run(&["mv", &upper_symlink, &new_upper_symlink])?;
     layer.run(&["mv", &lower_symlink, &new_lower_symlink])?;
 
-    layer.run(&["accept"])?;
+    layer.run(&["accept", "."])?;
     assert!(filename_path.exists());
     assert!(!lower_symlink_path.exists());
     assert!(new_lower_symlink_path.exists());
@@ -216,7 +216,7 @@ fn test_accept_remove_file(mut layer: LayerManager) -> Result<()> {
     assert!(path.exists());
     layer.run(&["rm", &filename])?;
     assert!(path.exists());
-    layer.run(&["accept"])?;
+    layer.run(&["accept", "."])?;
     assert!(!path.exists());
     Ok(())
 }
@@ -229,7 +229,7 @@ fn test_accept_remove_directory(mut layer: LayerManager) -> Result<()> {
     assert!(path.exists());
     layer.run(&["rmdir", &dirname])?;
     assert!(path.exists());
-    layer.run(&["accept"])?;
+    layer.run(&["accept", "."])?;
     assert!(!path.exists());
     Ok(())
 }
@@ -247,7 +247,7 @@ fn test_accept_remove_symlink(mut layer: LayerManager) -> Result<()> {
     assert!(path.exists());
     layer.run(&["rm", &symlink])?;
     assert!(path.exists());
-    layer.run(&["accept"])?;
+    layer.run(&["accept", "."])?;
     assert!(Path::new(&filename).exists());
     assert!(!path.exists());
     Ok(())
@@ -284,7 +284,7 @@ fn test_accept_opaque_directory(mut layer: LayerManager) -> Result<()> {
     assert!(!new_file.exists());
     assert!(!post_moved_masked_file.exists());
 
-    layer.run(&["accept"])?;
+    layer.run(&["accept", "."])?;
     assert!(dirname_path.exists());
     assert!(dir_renamed_path.exists());
     assert!(!masked_file.exists());
@@ -320,7 +320,7 @@ fn test_accept_removed_opaque_directory(mut layer: LayerManager) -> Result<()> {
     assert!(old_file.exists());
     assert!(!new_file.exists());
 
-    layer.run(&["accept"])?;
+    layer.run(&["accept", "."])?;
     assert!(dirname_path.exists());
     assert!(!old_file.exists());
     assert!(new_file.exists());
@@ -445,7 +445,7 @@ fn test_accept_symlink_overwrites(mut layer: LayerManager) -> Result<()> {
     layer.run(&["ln", "-s", file2_symlink_name, &file])?;
     layer.run(&["ln", "-s", file2_symlink_name, &dir])?;
 
-    assert!(layer.pass(&["accept"]));
+    assert!(layer.pass(&["accept", "."]));
 
     let file_contents = std::fs::read(&file)?;
     let dir_contents = std::fs::read(&dir)?;
@@ -462,7 +462,7 @@ fn test_accept_directory_overwrite(mut layer: LayerManager) -> Result<()> {
     std::fs::write(&p, "test")?;
     layer.run(&["rm", &p])?;
     layer.run(&["mkdir", &p])?;
-    assert!(layer.pass(&["accept"]));
+    assert!(layer.pass(&["accept", "."]));
     let path = Path::new(&p);
     assert!(path.exists());
     assert!(path.is_dir());
@@ -553,7 +553,7 @@ fn test_accept_inside_out(mut layer: LayerManager) -> Result<()> {
     layer.run(&["rm", post_B_file_del_post.to_str().unwrap()])?;
 
     // Accept the changes and verify the contents
-    assert!(layer.pass(&["accept"]));
+    assert!(layer.pass(&["accept", "."]));
     assert!(post_A.exists());
     assert!(post_B.exists());
     assert!(post_A_file_pre.exists());
@@ -629,7 +629,7 @@ fn test_accept_opaque(mut layer: LayerManager) -> Result<()> {
         .as_str(),
     ])?;
 
-    assert!(layer.pass(&["accept"]));
+    assert!(layer.pass(&["accept", "."]));
 
     assert!(!A_B.exists());
     assert!(C.exists());

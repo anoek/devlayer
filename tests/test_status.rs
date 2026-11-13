@@ -59,7 +59,7 @@ fn test_status(mut layer: LayerManager) -> Result<()> {
 fn test_status_outside(mut layer: LayerManager) -> Result<()> {
     let filename = "/tmp/test";
     layer.run(&["touch", filename])?;
-    layer.run(&["status"])?;
+    layer.run(&["status", "."])?;
     println!("{}", layer.last_stdout);
     assert!(
         layer
@@ -95,13 +95,13 @@ fn test_status_changed_attributes(mut layer: LayerManager) -> Result<()> {
     layer.run(&["touch", uid_file.as_str()])?;
     layer.run(&["touch", gid_file.as_str()])?;
 
-    assert!(layer.pass(&["status"]));
+    assert!(layer.pass(&["status", "."]));
     assert!(!layer.last_stderr.contains(&mode_file));
     assert!(!layer.last_stderr.contains(&uid_file));
     assert!(!layer.last_stderr.contains(&gid_file));
 
     layer.run(&["chmod", "777", mode_file.as_str()])?;
-    assert!(layer.pass(&["status"]));
+    assert!(layer.pass(&["status", "."]));
     assert!(layer.last_stderr.contains(&mode_file));
     assert!(!layer.last_stderr.contains(&uid_file));
     assert!(!layer.last_stderr.contains(&gid_file));
@@ -114,7 +114,7 @@ fn test_status_changed_attributes(mut layer: LayerManager) -> Result<()> {
         .output()?;
 
     layer.run(&["chmod", "777", uid_file.as_str()])?;
-    assert!(layer.pass(&["status"]));
+    assert!(layer.pass(&["status", "."]));
     assert!(layer.last_stderr.contains(&mode_file));
     assert!(layer.last_stderr.contains(&uid_file));
     assert!(layer.last_stderr.contains(&gid_file));

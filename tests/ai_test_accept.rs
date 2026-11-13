@@ -27,7 +27,7 @@ fn test_accept_directory_removal_counting(
     layer.run(&["rm", "-rf", &dirname])?;
 
     // First check the status to see what changes are detected
-    layer.run(&["status"])?;
+    layer.run(&["status", "."])?;
     let status_output = layer.last_stdout.clone();
     println!("Full status output:\n{}", status_output);
 
@@ -39,7 +39,7 @@ fn test_accept_directory_removal_counting(
     let removal_count = status_lines.len();
 
     // Accept all changes - we'll filter by the dirname in our counting
-    layer.run(&["accept"])?;
+    layer.run(&["accept", "."])?;
 
     // The output should show the actual count of changes
     // This will help us verify if there's double counting
@@ -125,11 +125,11 @@ fn test_accept_pretend_count_mixed_operations(
     layer.run(&["touch", layer.test_filename("new-file.txt").as_str()])?; // Create
 
     // Check status first to see what changes exist
-    layer.run(&["status"])?;
+    layer.run(&["status", "."])?;
     println!("Status output:\n{}", layer.last_stdout);
 
     // Accept changes and verify counts
-    layer.run(&["accept"])?;
+    layer.run(&["accept", "."])?;
     let output = layer.last_stdout.clone();
     println!("Accept output:\n{}", output);
 
@@ -178,7 +178,7 @@ fn test_accept_file_in_new_directory_counts_once(
     layer.run(&["sh", "-c", &format!("echo content > {}", filename)])?;
 
     // Check status to see what changes are detected
-    layer.run(&["status"])?;
+    layer.run(&["status", "."])?;
     let status_output = layer.last_stdout.clone();
     println!("Status output:\n{}", status_output);
 
@@ -194,7 +194,7 @@ fn test_accept_file_in_new_directory_counts_once(
     }
 
     // Accept changes
-    layer.run(&["accept"])?;
+    layer.run(&["accept", "."])?;
     let output = layer.last_stdout.clone();
     println!("Accept output:\n{}", output);
 
@@ -239,7 +239,7 @@ fn test_accept_file_in_depth_2_directory(
     layer.run(&["touch", &filename])?;
 
     // Check status to see what changes are detected
-    layer.run(&["status"])?;
+    layer.run(&["status", "."])?;
     let status_output = layer.last_stdout.clone();
     println!("Status output:\n{}", status_output);
 
@@ -255,7 +255,7 @@ fn test_accept_file_in_depth_2_directory(
     }
 
     // Accept all changes (not just our directory)
-    layer.run(&["accept"])?;
+    layer.run(&["accept", "."])?;
     let output = layer.last_stdout.clone();
     println!("Accept output:\n{}", output);
 
@@ -317,7 +317,7 @@ fn test_accept_directory_removal_counts_all_components(
     layer.run(&["rm", "-rf", &dir_a])?;
 
     // Check status
-    layer.run(&["status"])?;
+    layer.run(&["status", "."])?;
     let status_output = layer.last_stdout.clone();
     println!("Status output:\n{}", status_output);
 
@@ -329,7 +329,7 @@ fn test_accept_directory_removal_counts_all_components(
     println!("Removal count: {}", removal_count);
 
     // Accept all changes (not filtered by pattern to avoid issues)
-    layer.run(&["accept"])?;
+    layer.run(&["accept", "."])?;
     let output = layer.last_stdout.clone();
     println!("Accept output:\n{}", output);
 
@@ -388,7 +388,7 @@ fn test_accept_non_matching_count_message(
     ])?;
 
     // Check status to see all changes
-    layer.run(&["status"])?;
+    layer.run(&["status", "."])?;
     let status_output = layer.last_stdout.clone();
     println!("Status output:\n{}", status_output);
 

@@ -14,6 +14,12 @@ pub fn reject(
 ) -> Result<()> {
     trace!("Rejecting changes from layer {}", layer.name);
 
+    if patterns.is_empty() {
+        return Err(anyhow::anyhow!(
+            "reject requires at least one pattern; use `devlayer reject /` to reject every change in the layer"
+        ));
+    }
+
     let cwd = std::env::current_dir()?;
     let changes = layer.changes(config)?;
 

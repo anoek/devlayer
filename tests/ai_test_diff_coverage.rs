@@ -16,7 +16,7 @@ fn test_diff_rename_operation(mut layer: LayerManager) -> Result<()> {
     layer.run(&["mv", &dir1, &dir2])?;
 
     // Diff should show the rename
-    layer.run(&["diff"])?;
+    layer.run(&["diff", "."])?;
     assert!(layer.last_stdout.contains("### Moved"));
     assert!(layer.last_stdout.contains(&dir1));
     assert!(layer.last_stdout.contains(&dir2));
@@ -34,7 +34,7 @@ fn test_diff_colorized_output(mut layer: LayerManager) -> Result<()> {
     layer.run(&["sh", "-c", &format!("echo 'modified' > {}", file)])?;
 
     // Check diff output with color forced
-    layer.run_with_env(&["diff"], "TEST_FORCE_DIFF_COLOR", "1")?;
+    layer.run_with_env(&["diff", "."], "TEST_FORCE_DIFF_COLOR", "1")?;
     assert!(layer.last_stdout.contains("-original"));
     assert!(layer.last_stdout.contains("+modified"));
     // The actual color codes would be in the output when TEST_FORCE_DIFF_COLOR is set
@@ -52,7 +52,7 @@ fn test_diff_no_color(mut layer: LayerManager) -> Result<()> {
     layer.run(&["sh", "-c", &format!("echo 'changed' > {}", file)])?;
 
     // Check diff output with NO_COLOR set
-    layer.run_with_env(&["diff"], "NO_COLOR", "1")?;
+    layer.run_with_env(&["diff", "."], "NO_COLOR", "1")?;
     assert!(layer.last_stdout.contains("-content"));
     assert!(layer.last_stdout.contains("+changed"));
 
@@ -70,7 +70,7 @@ fn test_diff_rename_colorized(mut layer: LayerManager) -> Result<()> {
     layer.run(&["mv", &dir1, &dir2])?;
 
     // Diff with color forced
-    layer.run_with_env(&["diff"], "TEST_FORCE_DIFF_COLOR", "1")?;
+    layer.run_with_env(&["diff", "."], "TEST_FORCE_DIFF_COLOR", "1")?;
     assert!(layer.last_stdout.contains("### Moved"));
     // When colorized, the output would have ANSI color codes
 
@@ -92,7 +92,7 @@ fn test_diff_error_operation_unsupported_file_type(
     layer.run(&["sh", "-c", "echo 'data' > test.fifo &"])?;
 
     // Check diff - should skip error entries
-    layer.run(&["diff"])?;
+    layer.run(&["diff", "."])?;
     // Error operations are silently skipped in diff
 
     Ok(())
@@ -108,7 +108,7 @@ fn test_diff_non_file_destination(mut layer: LayerManager) -> Result<()> {
     layer.run(&["chmod", "755", &dir_path])?;
 
     // Diff should skip directories
-    layer.run(&["diff"])?;
+    layer.run(&["diff", "."])?;
     // Should not contain diff output for directory
     assert!(!layer.last_stdout.contains("test_dir"));
 
@@ -126,7 +126,7 @@ fn test_diff_staged_non_file(mut layer: LayerManager) -> Result<()> {
     layer.run(&["mkdir", &file_path])?;
 
     // Diff should handle this case
-    layer.run(&["diff"])?;
+    layer.run(&["diff", "."])?;
 
     Ok(())
 }
@@ -137,7 +137,7 @@ fn test_diff_missing_destination_file(mut layer: LayerManager) -> Result<()> {
     layer.run(&["sh", "-c", "echo 'new content' > newfile.txt"])?;
 
     // Diff should use /dev/null as left path
-    layer.run(&["diff"])?;
+    layer.run(&["diff", "."])?;
     assert!(layer.last_stdout.contains("+new content"));
 
     Ok(())
@@ -153,7 +153,7 @@ fn test_diff_remove_operation(mut layer: LayerManager) -> Result<()> {
     layer.run(&["rm", &file_path])?;
 
     // Diff should show deletion
-    layer.run(&["diff"])?;
+    layer.run(&["diff", "."])?;
     assert!(layer.last_stdout.contains("-content to remove"));
 
     Ok(())
@@ -173,7 +173,7 @@ fn test_diff_path_replacement_in_output(mut layer: LayerManager) -> Result<()> {
     ])?;
 
     // Check diff output
-    layer.run(&["diff"])?;
+    layer.run(&["diff", "."])?;
     assert!(layer.last_stdout.contains("-Original content"));
     assert!(layer.last_stdout.contains("+Modified content"));
 
@@ -189,7 +189,7 @@ fn test_diff_force_color_env_variable(mut layer: LayerManager) -> Result<()> {
     layer.run(&["sh", "-c", &format!("echo 'modified' > {}", file_path)])?;
 
     // Test with TEST_FORCE_DIFF_COLOR set
-    layer.run_with_env(&["diff"], "TEST_FORCE_DIFF_COLOR", "1")?;
+    layer.run_with_env(&["diff", "."], "TEST_FORCE_DIFF_COLOR", "1")?;
     assert!(layer.last_stdout.contains("-original"));
     assert!(layer.last_stdout.contains("+modified"));
     // Color codes would be in the actual diff output
@@ -218,7 +218,7 @@ fn test_diff_with_patterns(mut layer: LayerManager) -> Result<()> {
     assert!(!layer.last_stdout.contains("modified log"));
 
     // Diff with pattern matching - show all changes
-    layer.run(&["diff"])?;
+    layer.run(&["diff", "."])?;
     assert!(layer.last_stdout.contains("modified1"));
     assert!(layer.last_stdout.contains("modified2"));
     assert!(layer.last_stdout.contains("modified log"));
@@ -236,7 +236,7 @@ fn test_diff_edge_case_null_staged(mut layer: LayerManager) -> Result<()> {
     layer.run(&["sh", "-c", &format!("echo 'new' > {}", file_path)])?;
 
     // Diff should work normally
-    layer.run(&["diff"])?;
+    layer.run(&["diff", "."])?;
     assert!(layer.last_stdout.contains("-original"));
     assert!(layer.last_stdout.contains("+new"));
 

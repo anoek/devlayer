@@ -43,7 +43,7 @@ fn test_twisted(mut layer: LayerManager) -> Result<()> {
     ])?;
     layer.run(&["rm", format!("{}/d/a/b/file_b", path.display()).as_str()])?;
 
-    layer.run(&["accept"])?;
+    layer.run(&["accept", "."])?;
 
     assert!(
         std::fs::read_to_string(format!("{}/d/file_c_v2", path.display()))?
@@ -99,7 +99,7 @@ fn test_twisted_fail_rmdir_on_separate_device(
     layer.run(&["rm", format!("{}/d/a/b/file_b", path.display()).as_str()])?;
 
     assert!(layer.exfail(
-        &["accept"],
+        &["accept", "."],
         "TEST_ACCEPT_FAIL_RMDIR_ON_DIFFERENT_DEVICE",
         "1"
     ));

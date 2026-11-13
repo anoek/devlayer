@@ -276,25 +276,18 @@ impl ChangeEntries {
             })
             .collect();
 
-        let cwd_str = format!("{}/", cwd.display());
         ChangeEntries(
             self.0
                 .iter()
                 .filter(|change| {
-                    if patterns.is_empty() {
-                        change
-                            .destination
-                            .display()
-                            .to_string()
-                            .starts_with(&cwd_str)
-                    } else {
-                        patterns.iter().any(|pattern| {
+                    // With no patterns every change in the layer matches
+                    patterns.is_empty()
+                        || patterns.iter().any(|pattern| {
                             glob_match(
                                 pattern,
                                 change.destination.display().to_string(),
                             )
                         })
-                    }
                 })
                 .cloned()
                 .collect(),

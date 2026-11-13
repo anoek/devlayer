@@ -46,8 +46,8 @@ fn test_accept_deep_reshuffle(mut layer: LayerManager) -> Result<()> {
         layer.run(&["mv", &from_path, &to_path_str])?;
     }
 
-    //layer.run(&["status"])?;
-    layer.run(&["accept"])?;
+    //layer.run(&["status", "."])?;
+    layer.run(&["accept", "."])?;
 
     //let output = layer.run(&["ls", "-R", base.display().as_str()])?;
     //println!("{}", output.stdout);

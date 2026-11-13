@@ -90,7 +90,7 @@ fn test_rename_across_mount_points_failure(
     std::fs::create_dir_all(&test_file)?;
     layer.run(&["mv", test_file.as_str(), test_file2.as_str()])?;
     assert!(layer.exfail(
-        &["accept"],
+        &["accept", "."],
         "TEST_RENAME_ACROSS_MOUNT_POINTS_FAILURE",
         "1"
     ));
@@ -102,11 +102,11 @@ fn test_rename_across_mount_points_failure(
 fn test_bad_staged_file(mut layer: LayerManager) -> Result<()> {
     let test_file = layer.test_filename("test-file");
     layer.run(&["touch", test_file.as_str()])?;
-    assert!(layer.exfail(&["accept"], "TEST_NO_STAGED_FILE", "1"));
+    assert!(layer.exfail(&["accept", "."], "TEST_NO_STAGED_FILE", "1"));
 
     let test_file = layer.test_filename("test-file");
     layer.run(&["touch", test_file.as_str()])?;
-    assert!(layer.exfail(&["accept"], "TEST_BAD_STAGED_FILE", "1"));
+    assert!(layer.exfail(&["accept", "."], "TEST_BAD_STAGED_FILE", "1"));
     assert!(!Path::new(test_file.as_str()).exists());
     Ok(())
 }
@@ -116,11 +116,11 @@ fn test_bad_staged_file_remove(mut layer: LayerManager) -> Result<()> {
     let test_file = layer.test_filename("test-file");
     std::fs::write(&test_file, "test")?;
     layer.run(&["rm", test_file.as_str()])?;
-    assert!(layer.exfail(&["accept"], "TEST_NO_STAGED_FILE", "1"));
+    assert!(layer.exfail(&["accept", "."], "TEST_NO_STAGED_FILE", "1"));
 
     let test_file = layer.test_filename("test-file");
     layer.run(&["touch", test_file.as_str()])?;
-    assert!(layer.exfail(&["accept"], "TEST_BAD_STAGED_FILE", "1"));
+    assert!(layer.exfail(&["accept", "."], "TEST_BAD_STAGED_FILE", "1"));
     assert!(!Path::new(test_file.as_str()).exists());
     Ok(())
 }
@@ -132,11 +132,11 @@ fn test_remove_underlying_dir_failure(mut layer: LayerManager) -> Result<()> {
     std::fs::create_dir_all(&test_dir)?;
     layer.run(&["mv", test_dir.as_str(), test_dir2.as_str()])?;
     std::fs::remove_dir(&test_dir)?;
-    assert!(layer.pass(&["status"]));
+    assert!(layer.pass(&["status", "."]));
     let last_stdout = layer.last_stdout.clone();
     assert!(last_stdout.contains("Redirect path not found"));
 
-    assert!(layer.xfail(&["accept"]));
+    assert!(layer.xfail(&["accept", "."]));
     assert!(last_stdout.contains("Redirect path not found"));
 
     Ok(())

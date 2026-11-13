@@ -98,9 +98,9 @@ fn test_reject_remove_filled_directory_with_opaque_directory(
     assert!(path.exists());
     layer.run(&["mkdir", &dirname])?;
     layer.run(&["touch", path.join("file2").to_str().unwrap()])?;
-    layer.run(&["reject"])?;
+    layer.run(&["reject", "."])?;
     assert!(path.exists());
-    layer.run(&["accept"])?;
+    layer.run(&["accept", "."])?;
     assert!(path.exists());
     assert!(path.join("file").exists());
     assert!(!path.join("file2").exists());

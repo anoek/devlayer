@@ -10,7 +10,7 @@ fn test_diff_patterns(mut layer: LayerManager) -> Result<()> {
     layer.run(&["sh", "-c", "echo 'file_two' > file_two"])?;
 
     // diff for all files should show both changes
-    layer.run(&["diff"])?;
+    layer.run(&["diff", "."])?;
     assert!(layer.last_stdout.contains("file_one"));
     assert!(layer.last_stdout.contains("file_two"));
 
@@ -53,7 +53,7 @@ fn test_diff_operations(mut layer: LayerManager) -> Result<()> {
     ])?;
     layer.run(&["mv", &moved_src, &moved_dst])?;
 
-    layer.run(&["diff"])?;
+    layer.run(&["diff", "."])?;
     assert!(layer.last_stdout.contains(&added));
     assert!(layer.last_stdout.contains(&removed));
     assert!(layer.last_stdout.contains(&modified));

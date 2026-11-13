@@ -168,28 +168,30 @@ pub enum Action {
         patterns: Option<Vec<String>>,
     },
 
-    /// Show status of the layer matching the patterns in the current directory, or specified
-    /// patterns. Use `status /` to show status of all files in the layer.
+    /// Show the changes in the layer, all of them by default. Patterns are relative to the
+    /// current directory, so `status .` shows only changes under it.
     Status {
         /// Patterns of files to show
         #[arg(value_name = "PATTERNS", num_args = 0..)]
         patterns: Option<Vec<String>>,
     },
 
-    /// Show changes in the layer relative to the current changes
+    /// Show the content of the changes in the layer, all of them by default
     Diff {
         /// Patterns of files to diff
         #[arg(value_name = "PATTERNS", num_args = 0..)]
         patterns: Option<Vec<String>>,
     },
 
-    /// Accept changes in the layer
+    /// Accept the changes matching the patterns. At least one pattern is required; use
+    /// `accept /` to accept every change in the layer.
     Accept {
         #[arg(value_name = "PATTERNS", num_args = 0..)]
         patterns: Option<Vec<String>>,
     },
 
-    /// Reject changes in the layer
+    /// Reject the changes matching the patterns. At least one pattern is required; use
+    /// `reject /` to reject every change in the layer.
     Reject {
         #[arg(value_name = "PATTERNS", num_args = 0..)]
         patterns: Option<Vec<String>>,

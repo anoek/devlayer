@@ -31,7 +31,7 @@ fn test_json(mut layer: LayerManager) -> Result<()> {
  * out another way to exercise that code. */
 #[rstest]
 fn test_json_diff(mut layer: LayerManager) -> Result<()> {
-    layer.xfail(&["--json", "diff"]);
+    layer.xfail(&["--json", "diff", "."]);
     assert!(layer.last_stdout.contains("\"status\": \"error\""));
     Ok(())
 }
