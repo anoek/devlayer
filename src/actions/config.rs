@@ -16,7 +16,6 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
             "bind",
             "mask",
             "no_default_binds",
-            "audio",
             "cpus",
             "memory",
             "storage_dir",
@@ -48,7 +47,6 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
         .join(",");
 
     let no_default_binds_str = format!("{}", config.no_default_binds);
-    let audio_str = format!("{}", config.audio);
     let cpus_str = config
         .cpus
         .map_or("unlimited".to_string(), |cpus| cpus.to_string());
@@ -84,7 +82,6 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
             "no_default_binds" => {
                 ("no_default_binds", no_default_binds_str.as_str())
             }
-            "audio" => ("audio", audio_str.as_str()),
             "cpus" => ("cpus", cpus_str.as_str()),
             "memory" => ("memory", memory_str.as_str()),
             "name" => ("name", config.name.as_str()),

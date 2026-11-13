@@ -197,17 +197,14 @@ Examples:
   * `DEVLAYER_MASK="~/.ssh,~/.aws" devlayer` works as well
 
 `--no-default-binds`::
-Disable default system bind mounts (e.g., /dev/fuse, D-Bus sockets, user directories).
-This is useful when you want complete control over what gets mounted into the layer.
-
-`--audio`::
-Allow audio inside the layer by binding the PipeWire and PulseAudio sockets
-from `$XDG_RUNTIME_DIR` and the ALSA devices in `/dev/snd`. Audio is disabled
-by default because this also allows programs in the layer to record from your
-microphone. Audio works with or without `--net`, and is not affected by
-`--no-default-binds`. To enable audio by default you can store `audio = true`
-in a config file, and `DEVLAYER_AUDIO=false` will override that for a single
-run.
+Disable default system bind mounts: `/dev/fuse`, the D-Bus and systemd sockets
+(with host networking), and audio. This is useful when you want complete
+control over what gets mounted into the layer.
++
+Audio is on by default: the PipeWire and PulseAudio sockets from
+`$XDG_RUNTIME_DIR` and the ALSA devices in `/dev/snd` are bound into the layer.
+Note that this also allows programs in the layer to record from your
+microphone. Use `--no-default-binds` to turn audio off.
 
 `--cpus=<CPUS>`::
 Limit how many CPUs the layer can use. Fractional values such as `1.5` are

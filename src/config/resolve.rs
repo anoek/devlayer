@@ -161,18 +161,6 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("no_default_binds".into(), "environment".into());
     }
 
-    if let Ok(audio_env) = env::var("DEVLAYER_AUDIO") {
-        if let Ok(audio_val) = bool::from_str(&audio_env) {
-            partial_config.audio = Some(audio_val);
-            sources.insert("audio".into(), "environment".into());
-        } else {
-            return Err(anyhow::anyhow!(
-                "Invalid value for DEVLAYER_AUDIO: {}",
-                audio_env
-            ));
-        }
-    }
-
     for (var, key, field) in [
         ("DEVLAYER_CPUS", "cpus", &mut partial_config.cpus),
         ("DEVLAYER_MEMORY", "memory", &mut partial_config.memory),
@@ -234,11 +222,6 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("no_default_binds".into(), "cli".into());
     }
 
-    if cli.audio {
-        partial_config.audio = Some(true);
-        sources.insert("audio".into(), "cli".into());
-    }
-
     if let Some(cpus) = cli.cpus {
         partial_config.cpus = Some(cpus);
         sources.insert("cpus".into(), "cli".into());
@@ -279,11 +262,6 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     let no_default_binds = partial_config.no_default_binds.unwrap_or(false);
     if !sources.contains_key("no_default_binds") {
         sources.insert("no_default_binds".into(), "default".into());
-    }
-
-    let audio = partial_config.audio.unwrap_or(false);
-    if !sources.contains_key("audio") {
-        sources.insert("audio".into(), "default".into());
     }
 
     let cpus = partial_config
@@ -336,15 +314,11 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         .join(cwd.strip_prefix(&mp)?);
     sources.insert("overlay_cwd".into(), "derived from storage_dir".into());
 
-    // Audio bind mounts sit just above the default bind mounts. They are
-    // explicitly requested, so --no-default-binds does not disable them.
-    if audio {
-        bind_layers.insert(0, get_audio_bind_mounts());
-    }
-
-    // Default bind mounts are the lowest precedence layer
+    // Default bind mounts, including audio, are the lowest precedence layer
     if !no_default_binds {
-        bind_layers.insert(0, get_default_bind_mounts(&net, &uid_gid_home));
+        let mut default_binds = get_default_bind_mounts(&net, &uid_gid_home);
+        default_binds.extend(get_audio_bind_mounts());
+        bind_layers.insert(0, default_binds);
     }
 
     // Resolve bind mounts layer by layer from lowest to highest precedence.
@@ -395,7 +369,6 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources,
         bind_mounts,
         no_default_binds,
-        audio,
         cpus,
         memory,
         config_files,
@@ -760,10 +733,6 @@ fn merge_configs(
         base.no_default_binds = Some(no_default_binds);
         sources.insert("no_default_binds".into(), source.into());
     }
-    if let Some(audio) = override_config.audio {
-        base.audio = Some(audio);
-        sources.insert("audio".into(), source.into());
-    }
     if let Some(cpus) = override_config.cpus {
         base.cpus = Some(cpus);
         sources.insert("cpus".into(), source.into());
@@ -968,7 +937,6 @@ mod tests {
             log_level: LevelFilter::Info,
             bind_mounts: vec![],
             no_default_binds: false,
-            audio: false,
             cpus: None,
             memory: None,
             config_files: vec![],
@@ -1046,7 +1014,6 @@ mod tests {
             ]),
             mask: Some(vec!["/tmp/test3".to_string()]),
             no_default_binds: Some(true),
-            audio: Some(true),
             cpus: Some("-2".to_string()),
             memory: Some("4G".to_string()),
         };
@@ -1072,7 +1039,6 @@ mod tests {
         assert_eq!(base.storage_dir, Some("/tmp/test".to_string()));
         assert!(matches!(base.net, Some(Network::Host)));
         assert_eq!(base.ignored, Some(true));
-        assert_eq!(base.audio, Some(true));
         assert_eq!(base.cpus, Some("-2".to_string()));
         assert_eq!(base.memory, Some("4G".to_string()));
         assert_eq!(sources.get("cpus"), Some(&"test-config".to_string()));

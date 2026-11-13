@@ -72,14 +72,9 @@ pub struct Args {
     )]
     pub mask: Option<Vec<String>>,
 
-    /// Disable default system bind mounts (e.g., /dev/fuse, D-Bus sockets, user directories)
+    /// Disable default system bind mounts (e.g., /dev/fuse, D-Bus sockets, audio devices, user directories)
     #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
     pub no_default_binds: bool,
-
-    /// Allow access to audio devices (PipeWire, PulseAudio, and ALSA). Note this
-    /// also allows recording from microphones.
-    #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
-    pub audio: bool,
 
     /// Limit how many CPUs the layer can use. Fractional values such as 1.5
     /// are allowed. Negative values mean all but that many CPUs, so -2 on a

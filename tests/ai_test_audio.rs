@@ -4,10 +4,10 @@ use anyhow::Result;
 use fixtures::*;
 use rstest::*;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-/// Host paths that --audio should bind into the layer, limited to the ones
-/// that exist on this machine
+/// Host audio paths that are bound into the layer by default, limited to the
+/// ones that exist on this machine
 fn host_audio_paths() -> Vec<String> {
     let mut paths = vec![];
     if Path::new("/dev/snd").exists() {
@@ -24,105 +24,50 @@ fn host_audio_paths() -> Vec<String> {
     paths
 }
 
-/// Writes a config file with the given contents and returns its path
-fn write_config(
-    layer: &LayerManager,
-    prefix: &str,
-    contents: &str,
-) -> Result<String> {
-    let path = format!("{}.toml", layer.test_filename(prefix));
-    fs::write(&path, contents)?;
-    Ok(path)
+/// Creates a fake XDG_RUNTIME_DIR containing a `pulse` directory and returns
+/// its absolute path
+fn fake_runtime_dir(layer: &LayerManager) -> Result<PathBuf> {
+    let dir = std::env::current_dir()?.join(layer.test_filename("xdg"));
+    fs::create_dir_all(dir.join("pulse"))?;
+    Ok(dir)
 }
 
 #[rstest]
-fn ai_test_audio_disabled_by_default(mut layer: LayerManager) -> Result<()> {
-    layer.run(&["--no-config", "config", "audio"])?;
-    assert_eq!(layer.last_stdout.trim(), "false");
-
-    layer.run(&["--no-config", "config", "bind"])?;
-    for path in host_audio_paths() {
-        assert!(!layer.last_stdout.contains(&path));
-    }
-
-    Ok(())
-}
-
-#[rstest]
-fn ai_test_audio_flag(mut layer: LayerManager) -> Result<()> {
-    layer.run(&["--no-config", "--audio", "config", "audio"])?;
-    assert_eq!(layer.last_stdout.trim(), "true");
-
-    layer.run(&["--no-config", "--audio", "config", "bind"])?;
-    for path in host_audio_paths() {
-        assert!(layer.last_stdout.contains(&path));
-    }
-
-    Ok(())
-}
-
-#[rstest]
-fn ai_test_audio_env(mut layer: LayerManager) -> Result<()> {
+fn ai_test_audio_on_by_default(mut layer: LayerManager) -> Result<()> {
+    let xdg = fake_runtime_dir(&layer)?;
     layer.run_with_env(
-        &["--no-config", "config", "audio"],
-        "DEVLAYER_AUDIO",
-        "true",
+        &["--no-config", "config", "bind"],
+        "XDG_RUNTIME_DIR",
+        xdg.to_str().unwrap_or_default(),
     )?;
-    assert_eq!(layer.last_stdout.trim(), "true");
-
-    layer.run_with_env(
-        &["--no-config", "config", "audio"],
-        "DEVLAYER_AUDIO",
-        "false",
-    )?;
-    assert_eq!(layer.last_stdout.trim(), "false");
-
-    assert!(layer.exfail(
-        &["--no-config", "config", "audio"],
-        "DEVLAYER_AUDIO",
-        "yes"
-    ));
     assert!(
         layer
-            .last_stderr
-            .contains("Invalid value for DEVLAYER_AUDIO")
+            .last_stdout
+            .contains(&format!("{}/pulse", xdg.display()))
     );
-
     Ok(())
 }
 
 #[rstest]
-fn ai_test_audio_config_file(mut layer: LayerManager) -> Result<()> {
-    let config = write_config(&layer, "audio", "audio = true")?;
-
-    layer.run(&["--config", &config, "config", "audio"])?;
-    assert_eq!(layer.last_stdout.trim(), "true");
-
-    // The environment takes precedence over config files
+fn ai_test_audio_off_with_no_default_binds(
+    mut layer: LayerManager,
+) -> Result<()> {
+    let xdg = fake_runtime_dir(&layer)?;
     layer.run_with_env(
-        &["--config", &config, "config", "audio"],
-        "DEVLAYER_AUDIO",
-        "false",
+        &["--no-config", "--no-default-binds", "config", "bind"],
+        "XDG_RUNTIME_DIR",
+        xdg.to_str().unwrap_or_default(),
     )?;
-    assert_eq!(layer.last_stdout.trim(), "false");
-
+    assert!(!layer.last_stdout.contains("/pulse"));
+    assert!(!layer.last_stdout.contains("/dev/snd"));
     Ok(())
 }
 
 #[rstest]
-fn ai_test_audio_with_no_default_binds(mut layer: LayerManager) -> Result<()> {
-    layer.run(&[
-        "--no-config",
-        "--no-default-binds",
-        "--audio",
-        "config",
-        "bind",
-    ])?;
-    assert!(!layer.last_stdout.contains("/dev/fuse"));
-    for path in host_audio_paths() {
-        assert!(layer.last_stdout.contains(&path));
-    }
-
+fn ai_test_audio_flag_removed(mut layer: LayerManager) -> Result<()> {
+    assert!(layer.xfail(&["--no-config", "--audio", "config"]));
+    assert!(layer.xfail(&["--no-config", "config", "audio"]));
+    assert!(layer.last_stderr.contains("Unknown key: audio"));
     Ok(())
 }
 
@@ -130,23 +75,15 @@ fn ai_test_audio_with_no_default_binds(mut layer: LayerManager) -> Result<()> {
 fn ai_test_audio_mounted_in_layer(mut layer: LayerManager) -> Result<()> {
     let paths = host_audio_paths();
 
-    // Without audio devices or sockets, e.g. on CI runners, --audio has
-    // nothing to bind, so there's nothing to check
+    // Without audio devices or sockets, e.g. on CI runners, there's nothing
+    // to bind, so there's nothing to check
     if paths.is_empty() {
         eprintln!("No audio devices or sockets found, skipping");
         return Ok(());
     }
 
     for path in &paths {
-        assert!(layer.xfail(&["--no-config", "test", "-e", path]));
-    }
-
-    // Changing audio for a running layer requires a restart
-    assert!(layer.xfail(&["--no-config", "--audio", "true"]));
-    layer.run(&["stop"])?;
-
-    for path in &paths {
-        assert!(layer.pass(&["--no-config", "--audio", "test", "-e", path]));
+        assert!(layer.pass(&["--no-config", "test", "-e", path]));
     }
 
     // Parent directories created for the sockets mirror the host's ownership
@@ -155,7 +92,6 @@ fn ai_test_audio_mounted_in_layer(mut layer: LayerManager) -> Result<()> {
         if Path::new(&xdg_runtime_dir).join("pulse").exists() {
             layer.run(&[
                 "--no-config",
-                "--audio",
                 "stat",
                 "-c",
                 "%u %a",
@@ -170,6 +106,18 @@ fn ai_test_audio_mounted_in_layer(mut layer: LayerManager) -> Result<()> {
         }
     }
 
+    // Changing the default binds of a running layer requires a restart
+    layer.run(&["stop"])?;
+    for path in &paths {
+        assert!(layer.xfail(&[
+            "--no-config",
+            "--no-default-binds",
+            "test",
+            "-e",
+            path
+        ]));
+    }
+
     Ok(())
 }
 
@@ -180,7 +128,7 @@ fn ai_test_audio_without_xdg_runtime_dir(
     // Without XDG_RUNTIME_DIR we can't find the sockets, but /dev/snd is
     // still bound if it exists
     layer.run_with_env(
-        &["--no-config", "--audio", "config", "bind"],
+        &["--no-config", "config", "bind"],
         "XDG_RUNTIME_DIR",
         "",
     )?;
