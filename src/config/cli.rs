@@ -23,15 +23,19 @@ pub struct Args {
     )]
     pub log_level: Option<log::LevelFilter>,
 
-    /// Join the named layer, creating it if it does not exist yet
+    /// Join the named layer, creating it if it does not exist yet. Also settable
+    /// with `join` in a config file or DEVLAYER_JOIN.
     #[arg(long, global = true, value_hint = clap::ValueHint::Other, add = ArgValueCompleter::new(layer_name_completion), conflicts_with_all = &["new", "last"])]
     pub join: Option<String>,
 
-    /// Create a new layer with an auto-generated timestamp name
+    /// Create a new layer with an auto-generated timestamp name. This is the
+    /// default when running a command.
     #[arg(long, global = true, conflicts_with_all = &["join", "last"])]
     pub new: bool,
 
-    /// Use the most recently created layer
+    /// Use the newest layer created in the current directory, or else in the
+    /// nearest parent directory that has layers. This is the default for
+    /// status, diff, accept, reject, and stop/delete without patterns.
     #[arg(long, global = true, conflicts_with_all = &["join", "new"])]
     pub last: bool,
 

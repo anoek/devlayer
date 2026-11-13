@@ -72,6 +72,10 @@ fn ai_test_refuse_root(mut layer: LayerManager) -> Result<()> {
     ));
 
     assert!(layer.pass(&["--no-bind-cwd", "true"]));
+
+    // A layer created in / is an ancestor of every directory, so it would be
+    // picked by --last everywhere; delete it right away
+    layer.run(&["delete", "-y"])?;
     Ok(())
 }
 

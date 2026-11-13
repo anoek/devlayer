@@ -18,7 +18,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::cli::Args;
+use super::cli::{Action, Args};
 
 /// Parses bind mount string and expands tildes
 /// Format: source[:target[:options]]
@@ -203,28 +203,53 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("storage_dir".into(), "cli".into());
     }
 
-    // Handle name resolution based on CLI flags
-    if cli.new {
-        // Generate a new timestamp-based name
-        let name = generate_timestamp_name(
-            &partial_config.storage_dir,
-            uid_gid_home.uid,
-            uid_gid_home.gid,
-        )?;
-        partial_config.join = Some(name);
-        sources.insert("name".into(), "cli --new".into());
+    // Choose the layer. Explicit --new/--last/--join win, then a join from
+    // the environment or a config file, then the default for the action.
+    let cwd = std::env::current_dir()?;
+    let (selection, explicit) = if cli.new {
+        (LayerSelection::New, "cli --new")
     } else if cli.last {
-        // Find the most recently created layer
-        let name = find_last_layer(
+        (LayerSelection::Last, "cli --last")
+    } else if let Some(name) = cli.join.clone() {
+        (LayerSelection::Join(name), "cli --join")
+    } else if let Some(name) = partial_config.join.take() {
+        (LayerSelection::Join(name), "")
+    } else {
+        (default_selection(cli.action.as_ref()), "")
+    };
+    let name = match selection {
+        LayerSelection::Join(name) => name,
+        LayerSelection::New => generate_timestamp_name(
             &partial_config.storage_dir,
             uid_gid_home.uid,
             uid_gid_home.gid,
-        )?;
-        partial_config.join = Some(name);
-        sources.insert("name".into(), "cli --last".into());
-    } else if let Some(name) = cli.join {
-        partial_config.join = Some(name);
-        sources.insert("name".into(), "cli --join".into());
+        )?,
+        LayerSelection::Last => find_last_layer(
+            &resolve_storage_dir(
+                partial_config.storage_dir.clone(),
+                uid_gid_home.uid,
+                uid_gid_home.gid,
+            )?,
+            &cwd,
+        )?,
+        LayerSelection::LastOrNew => match find_last_layer(
+            &resolve_storage_dir(
+                partial_config.storage_dir.clone(),
+                uid_gid_home.uid,
+                uid_gid_home.gid,
+            )?,
+            &cwd,
+        ) {
+            Ok(name) => name,
+            Err(_) => generate_timestamp_name(
+                &partial_config.storage_dir,
+                uid_gid_home.uid,
+                uid_gid_home.gid,
+            )?,
+        },
+    };
+    if !explicit.is_empty() {
+        sources.insert("name".into(), explicit.into());
     }
 
     if let Some(net) = cli.net {
@@ -274,7 +299,6 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     bind_layers.push(cli_bind_layer);
 
     // If nothing else, fill in with some default values
-    let name = partial_config.join.unwrap_or("devlayer".to_string());
     if !sources.contains_key("name") {
         sources.insert("name".into(), "default".into());
     }
@@ -337,7 +361,6 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("layer_dir".into(), "derived from storage_dir".into());
     }
 
-    let cwd = std::env::current_dir()?;
     let mp = find_mount_point(cwd.clone())?;
     let hash =
         data_encoding::BASE32_NOPAD.encode(mp.to_string_lossy().as_bytes());
@@ -920,55 +943,98 @@ fn generate_timestamp_name(
     }
 }
 
-fn find_last_layer(
-    storage_dir: &Option<String>,
-    uid: Uid,
-    gid: Gid,
-) -> Result<String> {
-    let storage_dir = resolve_storage_dir(storage_dir.clone(), uid, gid)?;
+/// How the layer to use is chosen
+#[derive(Debug, Clone, PartialEq)]
+pub enum LayerSelection {
+    /// A new layer with a generated `ephemeral_*` name
+    New,
+    /// The newest layer created in the cwd, or else in its nearest ancestor
+    /// that has layers
+    Last,
+    /// Like `Last`, but falls back to a new name when no layer matches. Used
+    /// by `config` so it reports this directory's layer without failing.
+    LastOrNew,
+    /// The named layer, created if it does not exist
+    Join(String),
+}
 
-    let entries = std::fs::read_dir(&storage_dir).context(format!(
-        "Failed to read layer storage directory: {:?}",
-        storage_dir
+/// The layer selection used when no --new, --last or --join is given and no
+/// join is set in the environment or a config file
+pub fn default_selection(action: Option<&Action>) -> LayerSelection {
+    match action {
+        None => LayerSelection::New,
+        Some(
+            Action::Status { .. }
+            | Action::Diff { .. }
+            | Action::Accept { .. }
+            | Action::Reject { .. }
+            | Action::Stop {
+                all: false,
+                patterns: None,
+            },
+        ) => LayerSelection::Last,
+        Some(Action::Delete { patterns, .. })
+            if patterns.as_ref().is_none_or(|p| p.is_empty()) =>
+        {
+            LayerSelection::Last
+        }
+        Some(Action::Config { .. }) => LayerSelection::LastOrNew,
+        Some(_) => LayerSelection::New,
+    }
+}
+
+/// Finds the newest layer created in `cwd`, or else in the nearest ancestor
+/// of `cwd` that has layers. Layers without a recorded creation directory are
+/// ignored.
+fn find_last_layer(storage_dir: &Path, cwd: &Path) -> Result<String> {
+    let cwd = cwd.canonicalize().context(format!(
+        "Failed to canonicalize current directory {}",
+        cwd.display()
     ))?;
 
-    let mut layers: Vec<(String, SystemTime)> = Vec::new();
-
-    for entry in entries {
-        let entry = entry?;
-        let path = entry.path();
-
-        // Check if this is a valid layer directory
-        if path.is_dir()
-            && path.join("upper").is_dir()
-            && path.join("work").is_dir()
-            && path.join("overlay").is_dir()
-        {
-            let name = entry.file_name().to_string_lossy().to_string();
-            let metadata = entry.metadata()?;
-            let created = metadata
-                .created()
-                .or_else(|_| metadata.modified())
-                .context("Failed to get creation time for layer")?;
-            layers.push((name, created));
-        }
-    }
+    let layers: Vec<(PathBuf, String, SystemTime)> =
+        std::fs::read_dir(storage_dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|entry| {
+                let path = entry.path();
+                let settings = LayerSettings::load_from_file(
+                    &path.join("data").join("settings.json"),
+                )
+                .ok()?;
+                let metadata = entry.metadata().ok()?;
+                let created =
+                    metadata.created().or_else(|_| metadata.modified()).ok()?;
+                Some((
+                    settings.created_in?,
+                    entry.file_name().to_string_lossy().to_string(),
+                    created,
+                ))
+            })
+            .collect();
 
     #[cfg(feature = "coverage")]
-    let mut layers = if std::env::var_os("TEST_LAST_IS_EMPTY").is_some() {
+    let layers = if std::env::var_os("TEST_LAST_IS_EMPTY").is_some() {
         vec![]
     } else {
         layers
     };
 
-    if layers.is_empty() {
-        return Err(anyhow::anyhow!("No layers found"));
-    }
-
-    // Sort by creation time (newest first)
-    layers.sort_by(|a, b| b.1.cmp(&a.1));
-
-    Ok(layers[0].0.clone())
+    cwd.ancestors()
+        .find_map(|dir| {
+            layers
+                .iter()
+                .filter(|(created_in, _, _)| created_in == dir)
+                .max_by_key(|(_, _, created)| *created)
+                .map(|(_, name, _)| name.clone())
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "No devlayer found for {} or its parent directories; use --join <name> or `devlayer list`",
+                cwd.display()
+            )
+        })
 }
 
 #[cfg(test)]
@@ -981,6 +1047,58 @@ mod tests {
 
     // Mutex to ensure XDG_RUNTIME_DIR tests don't interfere with each other
     static XDG_TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn default_selection_by_action() {
+        use LayerSelection::*;
+        let none = || None;
+        let some = |p: &[&str]| Some(p.iter().map(|s| s.to_string()).collect());
+
+        assert_eq!(default_selection(None), New);
+        for action in [
+            Action::Status { patterns: none() },
+            Action::Diff { patterns: none() },
+            Action::Accept { patterns: none() },
+            Action::Reject { patterns: none() },
+            Action::Stop {
+                all: false,
+                patterns: none(),
+            },
+            Action::Delete {
+                yes: true,
+                patterns: none(),
+            },
+            Action::Delete {
+                yes: true,
+                patterns: some(&[]),
+            },
+        ] {
+            assert_eq!(default_selection(Some(&action)), Last, "{action:?}");
+        }
+        assert_eq!(
+            default_selection(Some(&Action::Config { keys: none() })),
+            LastOrNew
+        );
+        for action in [
+            Action::Stop {
+                all: true,
+                patterns: none(),
+            },
+            Action::Stop {
+                all: false,
+                patterns: some(&["x"]),
+            },
+            Action::Delete {
+                yes: true,
+                patterns: some(&["x"]),
+            },
+            Action::List { patterns: none() },
+            Action::Sync,
+            Action::Clean { yes: true },
+        ] {
+            assert_eq!(default_selection(Some(&action)), New, "{action:?}");
+        }
+    }
 
     /// Creates an empty, unique fake home directory for LLM bind tests
     fn fake_home(tag: &str) -> PathBuf {

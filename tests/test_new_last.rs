@@ -23,7 +23,7 @@ fn test_last_is_empty(mut layer: LayerManager) -> Result<()> {
     layer.no_default_options = true;
 
     assert!(layer.exfail(&["--last", "-v", "true"], "TEST_LAST_IS_EMPTY", "1"));
-    assert!(layer.last_stderr.contains("No layers found"));
+    assert!(layer.last_stderr.contains("No devlayer found"));
 
     Ok(())
 }

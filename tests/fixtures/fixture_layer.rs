@@ -122,10 +122,18 @@ impl LayerManager {
         }
     }
 
-    /// Applies the configured working directory to a command
+    /// Applies the configured working directory to a command. A relative
+    /// LLVM_PROFILE_FILE is made absolute so coverage data from commands run
+    /// elsewhere still lands in this repository.
     fn apply_cwd(&self, cmd: &mut Command) {
         if let Some(cwd) = &self.cwd {
             cmd.current_dir(cwd);
+            if let (Ok(profile), Ok(here)) =
+                (std::env::var("LLVM_PROFILE_FILE"), std::env::current_dir())
+                && Path::new(&profile).is_relative()
+            {
+                cmd.env("LLVM_PROFILE_FILE", here.join(profile));
+            }
         }
     }
 
