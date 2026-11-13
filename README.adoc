@@ -172,14 +172,28 @@ network. Use `--net=none` (or `net="none"` in a config file) to disable network
 access. With host networking the D-Bus and systemd sockets are also bound into
 the layer by default; `--no-default-binds` turns them off.
 
+`--no-bind-cwd`::
+By default the directory you start a layer in is bound read-write into the
+layer, so changes there go straight to your host without having to
+accept/reject them, while the rest of the system stays protected by the layer.
+Use `--no-bind-cwd` (or `no_bind_cwd = true` in a config file, or
+`DEVLAYER_NO_BIND_CWD=true`) to keep that directory layered too.
+`devlayer` refuses to bind `/` this way; run it from a project directory or
+pass `--no-bind-cwd`.
++
+A layer remembers the directory it was created in and whether it was bound.
+Re-entering it later, from any directory and with or without
+`--no-bind-cwd`, keeps those original choices. Note that config files are
+still found by searching from your current directory, so joining a layer from
+a different project can load a different `.devlayer.toml`; if that changes its
+network, limits or binds, `devlayer` asks you to stop the layer first.
+
 `--bind[=<MOUNTS>]`::
 Specify directories or files to bind into the layer bypassing the layer
 OverlayFS system. 
 Examples: 
-  * `--bind=.` bind the current directory into the layer so that changes made
-    will be reflected in the host system without having to accept/reject them.
-    The rest of the system will still be mounted in OverlayFS FS layers to
-    protect your system. 
+  * `--bind=../shared` bind a sibling directory into the layer as well as the
+    current directory, which is bound by default.
   * `--bind=data1:/data` to mount the relative `data1` directory into the layer as `/data`.
   * `--bind=my/protected/dir::ro` will mount the relative `my/protected/dir`
     directory into the layer as read only.

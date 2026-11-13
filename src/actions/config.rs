@@ -17,6 +17,9 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
             "mask",
             "no_default_binds",
             "no_default_llm_binds",
+            "no_bind_cwd",
+            "bind_cwd",
+            "created_in",
             "cpus",
             "memory",
             "storage_dir",
@@ -49,6 +52,8 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
 
     let no_default_binds_str = format!("{}", config.no_default_binds);
     let no_default_llm_binds_str = format!("{}", config.no_default_llm_binds);
+    let bind_cwd_str = format!("{}", config.bind_cwd);
+    let no_bind_cwd_str = format!("{}", !config.bind_cwd);
     let cpus_str = config
         .cpus
         .map_or("unlimited".to_string(), |cpus| cpus.to_string());
@@ -87,6 +92,12 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
             "no_default_llm_binds" => {
                 ("no_default_llm_binds", no_default_llm_binds_str.as_str())
             }
+            "bind_cwd" => ("bind_cwd", bind_cwd_str.as_str()),
+            "no_bind_cwd" => ("no_bind_cwd", no_bind_cwd_str.as_str()),
+            "created_in" => (
+                "created_in",
+                config.created_in.to_str().unwrap_or("<error>"),
+            ),
             "cpus" => ("cpus", cpus_str.as_str()),
             "memory" => ("memory", memory_str.as_str()),
             "name" => ("name", config.name.as_str()),

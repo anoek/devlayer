@@ -1,6 +1,7 @@
 use super::PartialConfig;
 use super::limits::{available_cpus, parse_cpus, parse_memory};
 use crate::config::{BindMount, BindMountOptions, Network};
+use crate::layer::LayerSettings;
 use crate::util::{
     can_access, can_mkdir, expand_tilde_path, find_mount_point, mkdir,
 };
@@ -172,6 +173,14 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("no_default_llm_binds".into(), "environment".into());
     }
 
+    if let Ok(value) = env::var("DEVLAYER_NO_BIND_CWD") {
+        let value = bool::from_str(&value).map_err(|_| {
+            anyhow::anyhow!("Invalid value for DEVLAYER_NO_BIND_CWD: {}", value)
+        })?;
+        partial_config.no_bind_cwd = Some(value);
+        sources.insert("no_bind_cwd".into(), "environment".into());
+    }
+
     for (var, key, field) in [
         ("DEVLAYER_CPUS", "cpus", &mut partial_config.cpus),
         ("DEVLAYER_MEMORY", "memory", &mut partial_config.memory),
@@ -238,6 +247,11 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("no_default_llm_binds".into(), "cli".into());
     }
 
+    if cli.no_bind_cwd {
+        partial_config.no_bind_cwd = Some(true);
+        sources.insert("no_bind_cwd".into(), "cli".into());
+    }
+
     if let Some(cpus) = cli.cpus {
         partial_config.cpus = Some(cpus);
         sources.insert("cpus".into(), "cli".into());
@@ -284,6 +298,11 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         partial_config.no_default_llm_binds.unwrap_or(false);
     if !sources.contains_key("no_default_llm_binds") {
         sources.insert("no_default_llm_binds".into(), "default".into());
+    }
+
+    let no_bind_cwd = partial_config.no_bind_cwd.unwrap_or(false);
+    if !sources.contains_key("no_bind_cwd") {
+        sources.insert("no_bind_cwd".into(), "default".into());
     }
 
     let cpus = partial_config
@@ -335,6 +354,14 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         .join(&hash)
         .join(cwd.strip_prefix(&mp)?);
     sources.insert("overlay_cwd".into(), "derived from storage_dir".into());
+
+    // The directory the layer was created in is bound just above the LLM binds
+    let (created_in, bind_cwd) = resolve_origin(&layer_dir, &cwd, no_bind_cwd)?;
+    sources.insert("created_in".into(), "layer settings or cwd".into());
+    sources.insert("bind_cwd".into(), "layer settings or no_bind_cwd".into());
+    if bind_cwd {
+        bind_layers.insert(0, vec![created_in.display().to_string()]);
+    }
 
     // LLM tool binds sit just above the default bind mounts
     if !no_default_llm_binds {
@@ -397,6 +424,8 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         bind_mounts,
         no_default_binds,
         no_default_llm_binds,
+        created_in,
+        bind_cwd,
         cpus,
         memory,
         config_files,
@@ -453,6 +482,36 @@ fn get_default_bind_mounts(net: &Network) -> Vec<String> {
     }
 
     default_binds
+}
+
+/// Returns the directory a layer was created in and whether that directory is
+/// bound into the layer. An existing layer keeps the values recorded in its
+/// settings when it was created, so re-entering it from another directory, or
+/// without --no-bind-cwd, does not change its binds. A new layer uses `cwd`.
+pub fn resolve_origin(
+    layer_dir: &Path,
+    cwd: &Path,
+    no_bind_cwd: bool,
+) -> Result<(PathBuf, bool)> {
+    let settings_path = layer_dir.join("data").join("settings.json");
+    if let Ok(settings) = LayerSettings::load_from_file(&settings_path)
+        && let (Some(created_in), Some(bind_cwd)) =
+            (settings.created_in, settings.bind_cwd)
+    {
+        return Ok((created_in, bind_cwd));
+    }
+
+    let created_in = cwd.canonicalize().context(format!(
+        "Failed to canonicalize current directory {}",
+        cwd.display()
+    ))?;
+    let bind_cwd = !no_bind_cwd;
+    if bind_cwd && created_in == Path::new("/") {
+        return Err(anyhow::anyhow!(
+            "Refusing to bind / into the layer; run from a project directory or pass --no-bind-cwd"
+        ));
+    }
+    Ok((created_in, bind_cwd))
 }
 
 /// Well-known AI tool config and state paths, relative to the home directory,
@@ -780,6 +839,10 @@ fn merge_configs(
         base.no_default_llm_binds = Some(value);
         sources.insert("no_default_llm_binds".into(), source.into());
     }
+    if let Some(value) = override_config.no_bind_cwd {
+        base.no_bind_cwd = Some(value);
+        sources.insert("no_bind_cwd".into(), source.into());
+    }
     if let Some(cpus) = override_config.cpus {
         base.cpus = Some(cpus);
         sources.insert("cpus".into(), source.into());
@@ -1022,6 +1085,8 @@ mod tests {
             bind_mounts: vec![],
             no_default_binds: false,
             no_default_llm_binds: false,
+            created_in: PathBuf::from("/tmp"),
+            bind_cwd: false,
             cpus: None,
             memory: None,
             config_files: vec![],
@@ -1100,6 +1165,7 @@ mod tests {
             mask: Some(vec!["/tmp/test3".to_string()]),
             no_default_binds: Some(true),
             no_default_llm_binds: Some(true),
+            no_bind_cwd: Some(true),
             cpus: Some("-2".to_string()),
             memory: Some("4G".to_string()),
         };
@@ -1128,6 +1194,7 @@ mod tests {
         assert_eq!(base.cpus, Some("-2".to_string()));
         assert_eq!(base.memory, Some("4G".to_string()));
         assert_eq!(base.no_default_llm_binds, Some(true));
+        assert_eq!(base.no_bind_cwd, Some(true));
         assert_eq!(
             sources.get("no_default_llm_binds"),
             Some(&"test-config".to_string())

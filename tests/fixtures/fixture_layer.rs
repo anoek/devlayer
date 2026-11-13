@@ -68,6 +68,11 @@ pub struct LayerManager {
     pub devlayer_bin: String,
     pub no_default_options: bool,
     pub ignored: bool, // Controls whether --ignored is automatically added
+    /// When false (the default), --no-bind-cwd is added so that tests run
+    /// from the repository root do not write straight to the checkout
+    pub bind_cwd: bool,
+    /// Directory to run commands from, defaults to the test process cwd
+    pub cwd: Option<PathBuf>,
 }
 
 impl LayerManager {
@@ -98,6 +103,29 @@ impl LayerManager {
             devlayer_bin: get_devlayer_bin(),
             no_default_options: false,
             ignored: true, // Default to true to maintain existing behavior
+            bind_cwd: false,
+            cwd: None,
+        }
+    }
+
+    /* Controls whether --no-bind-cwd is automatically added to commands */
+    #[allow(dead_code)]
+    pub fn set_bind_cwd(&mut self, bind_cwd: bool) {
+        self.bind_cwd = bind_cwd;
+    }
+
+    /// Adds --no-bind-cwd unless the test opted in to the cwd bind or passes
+    /// the flag itself
+    fn add_no_bind_cwd(&self, cmd: &mut Command, args: &[&str]) {
+        if !self.bind_cwd && !args.contains(&"--no-bind-cwd") {
+            cmd.args(["--no-bind-cwd"]);
+        }
+    }
+
+    /// Applies the configured working directory to a command
+    fn apply_cwd(&self, cmd: &mut Command) {
+        if let Some(cwd) = &self.cwd {
+            cmd.current_dir(cwd);
         }
     }
 
@@ -123,7 +151,9 @@ impl LayerManager {
         }
 
         cmd.args([format!("--join={}", &self.name)]);
+        self.add_no_bind_cwd(&mut cmd, &[]);
         cmd.args(["config", "layer_dir"]);
+        self.apply_cwd(&mut cmd);
         let output = cmd.output()?;
         let base = String::from_utf8_lossy(&output.stdout).to_string();
         let base = base.trim();
@@ -185,6 +215,7 @@ impl LayerManager {
         {
             cmd.args([format!("--join={}", &self.name)]);
         }
+        self.add_no_bind_cwd(&mut cmd, args);
         cmd.args(args);
 
         // Set up stdin
@@ -201,6 +232,7 @@ impl LayerManager {
                 .join(" ")
         );
 
+        self.apply_cwd(&mut cmd);
         let mut child = cmd
             .spawn()
             .map_err(|e| anyhow::anyhow!("Failed to spawn command: {:?}", e))?;
@@ -276,6 +308,7 @@ impl LayerManager {
         {
             cmd.args([format!("--join={}", &self.name)]);
         }
+        self.add_no_bind_cwd(&mut cmd, args);
         cmd.args(args);
         println!(
             "Running command: {} {}",
@@ -285,6 +318,7 @@ impl LayerManager {
                 .collect::<Vec<_>>()
                 .join(" ")
         );
+        self.apply_cwd(&mut cmd);
         match cmd.output() {
             Ok(output) => {
                 self.last_stdout =
@@ -329,6 +363,7 @@ impl LayerManager {
         if !self.no_default_options {
             cmd.args([format!("--join={}", &self.name)]);
         }
+        self.add_no_bind_cwd(&mut cmd, args);
         cmd.args(args);
 
         println!(
@@ -340,6 +375,7 @@ impl LayerManager {
                 .join(" ")
         );
 
+        self.apply_cwd(&mut cmd);
         Ok(cmd.spawn()?)
     }
 
@@ -399,6 +435,7 @@ impl Drop for LayerManager {
         // Reset flags to default state for cleanup commands
         self.no_default_options = false;
         self.ignored = true;
+        self.cwd = None;
 
         if let Err(e) = self.run(&["stop"]) {
             error!("Failed to kill layer: {}", e);

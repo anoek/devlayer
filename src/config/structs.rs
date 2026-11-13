@@ -61,6 +61,7 @@ pub struct PartialConfig {
     pub mask: Option<Vec<String>>,
     pub no_default_binds: Option<bool>,
     pub no_default_llm_binds: Option<bool>,
+    pub no_bind_cwd: Option<bool>,
     #[serde(deserialize_with = "deserialize_number_or_string", default)]
     pub cpus: Option<String>,
     #[serde(deserialize_with = "deserialize_number_or_string", default)]
@@ -81,6 +82,10 @@ pub struct Config {
     pub bind_mounts: Vec<BindMount>,
     pub no_default_binds: bool,
     pub no_default_llm_binds: bool,
+    /// Canonical directory the layer was created in
+    pub created_in: PathBuf,
+    /// Whether created_in is bound read-write into the layer
+    pub bind_cwd: bool,
     /// Number of CPUs the layer may use, None for unlimited
     pub cpus: Option<f64>,
     /// Bytes of memory the layer may use, None for unlimited

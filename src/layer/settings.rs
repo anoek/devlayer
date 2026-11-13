@@ -2,7 +2,7 @@ use crate::config::{BindMount, Config};
 use crate::layer::mount_overlays::MountHash;
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LayerSettings {
@@ -15,6 +15,12 @@ pub struct LayerSettings {
     pub cpus: Option<f64>,
     #[serde(default)]
     pub memory: Option<u64>,
+    /// Canonical directory the layer was created in
+    #[serde(default)]
+    pub created_in: Option<PathBuf>,
+    /// Whether created_in is bound read-write into the layer
+    #[serde(default)]
+    pub bind_cwd: Option<bool>,
 }
 
 impl LayerSettings {
@@ -26,6 +32,8 @@ impl LayerSettings {
             bind_mounts: config.bind_mounts.clone(),
             cpus: config.cpus,
             memory: config.memory,
+            created_in: Some(config.created_in.clone()),
+            bind_cwd: Some(config.bind_cwd),
         }
     }
 

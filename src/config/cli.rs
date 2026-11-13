@@ -81,6 +81,11 @@ pub struct Args {
     #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
     pub no_default_llm_binds: bool,
 
+    /// Do not bind the current directory into the layer. By default it is bound
+    /// read-write, so changes there go straight to the host.
+    #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
+    pub no_bind_cwd: bool,
+
     /// Limit how many CPUs the layer can use. Fractional values such as 1.5
     /// are allowed. Negative values mean all but that many CPUs, so -2 on a
     /// 32 CPU machine allows the layer to use 30. Use "unlimited" to remove
