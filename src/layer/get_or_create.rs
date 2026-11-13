@@ -1,5 +1,6 @@
 use super::cgroup::remove_cgroup;
 use super::mount_overlays::MountHash;
+use super::supervisor;
 use crate::config::{BindMount, BindMountOptions, Config, Network};
 use crate::layer::{Layer, LayerOrigin};
 #[cfg(feature = "coverage")]
@@ -21,10 +22,14 @@ use nix::{
     mount::MsFlags,
     mount::{MntFlags, umount2},
     sys::stat::{Mode, SFlag, makedev, mknod},
-    unistd::{Gid, Pid, Uid, close, pipe, pivot_root, setsid},
+    sys::wait::waitpid,
+    unistd::{
+        ForkResult, Gid, Pid, Uid, close, fork, pipe, pivot_root, setsid,
+    },
 };
 #[cfg(feature = "coverage")]
 use std::ffi::CString;
+use std::io::Read;
 use std::os::{
     fd::{AsRawFd, OwnedFd},
     unix::fs::{MetadataExt, symlink},
@@ -234,6 +239,10 @@ impl Layer {
     /**
      * This launches a new process with new namespaces. The process will go to sleep
      * but stick around to allow future processes to be launched in the same namespaces.
+     *
+     * PID 1 is started by a supervisor process we fork first, which waits for
+     * PID 1 to exit and then cleans up after the layer. The supervisor reports
+     * back whether PID 1 is ready, followed by its pid.
      */
     fn start_layer(
         &self,
@@ -242,6 +251,67 @@ impl Layer {
         overlay_mounts: &Vec<MountHash>,
         cgroup: Option<&OwnedFd>,
     ) -> Result<Pid> {
+        let (read_fd, write_fd) =
+            pipe().context("failed to create pipe for layer supervisor")?;
+
+        match unsafe { fork() }.context("failed to fork layer supervisor")? {
+            ForkResult::Parent { child } => {
+                drop(write_fd);
+                let mut buffer = [0; 5];
+                let ready = std::fs::File::from(read_fd)
+                    .read_exact(&mut buffer)
+                    .is_ok()
+                    && buffer[0] == 0;
+                if !ready {
+                    let _ = waitpid(child, None);
+                    return Err(anyhow!("Failed to setup layer"));
+                }
+                let pid = i32::from_le_bytes([
+                    buffer[1], buffer[2], buffer[3], buffer[4],
+                ]);
+                Ok(Pid::from_raw(pid))
+            }
+            ForkResult::Child => {
+                drop(read_fd);
+                let pid1 = self
+                    .start_pid1(config, pid_file, overlay_mounts, cgroup)
+                    .map_err(|e| {
+                        error!("Failed to start layer: {:#}", e);
+                        e
+                    });
+                let message = match pid1 {
+                    Ok(pid) => {
+                        let mut message = vec![0];
+                        message.extend(pid.as_raw().to_le_bytes());
+                        message
+                    }
+                    Err(_) => vec![1],
+                };
+                let _ = nix::unistd::write(&write_fd, &message);
+                match pid1 {
+                    Ok(pid) => {
+                        supervisor::detach();
+                        supervisor::supervise(self, pid, cgroup.is_some())
+                    }
+                    Err(_) => std::process::exit(1),
+                }
+            }
+        }
+    }
+
+    /**
+     * Runs in the supervisor: starts PID 1, records its pid, and waits until
+     * it reports that the layer is set up.
+     */
+    fn start_pid1(
+        &self,
+        config: &Config,
+        pid_file: &PathBuf,
+        overlay_mounts: &Vec<MountHash>,
+        cgroup: Option<&OwnedFd>,
+    ) -> Result<Pid> {
+        supervisor::become_supervisor()?;
+
         // create a pipe between ourselves and the main layer process so the main layer process can
         // let us know when it's done setting up the namespaces
         let (read_fd, write_fd) =
@@ -263,6 +333,8 @@ impl Layer {
                 // Starting in our cgroup also makes it the root of our cgroup namespace
                 | cgroup.map_or(0, |_| CLONE_INTO_CGROUP),
             cgroup: cgroup.map_or(0, |fd| fd.as_raw_fd() as u64),
+            // Lets the supervisor waitpid() on PID 1
+            exit_signal: libc::SIGCHLD as u64,
             ..Default::default()
         };
 
@@ -292,15 +364,15 @@ impl Layer {
             // Wait for the child process to finish mounting procfs and doing whatever
             // setup stuff it needs to do. Once done, it sends a byte over the pipe, that's
             // our signal that the namespaces are ready for use.
-            let mut buffer = [0; 1];
-            nix::unistd::read(read_fd.as_raw_fd(), &mut buffer)
-                .context("failed to read from layer ready pipe")?;
+            let mut buffer = [1; 1];
+            let _ = nix::unistd::read(read_fd.as_raw_fd(), &mut buffer);
 
-            if buffer[0] == 1 {
+            if buffer[0] != 0 {
+                // Wait for PID 1 to exit so it's out of the layer's cgroup
+                // before the caller removes it
+                let _ = waitpid(pid, None);
                 return Err(anyhow!("Failed to setup layer"));
             }
-
-            drop(read_fd);
 
             Ok(pid)
         } else {
@@ -323,9 +395,7 @@ impl Layer {
                 });
 
             // If we're here, an error occurred and we'll exit
-            nix::unistd::write(&write_fd, &[1])
-                .context("failed to write to layer ready pipe")?;
-
+            let _ = nix::unistd::write(&write_fd, &[1]);
             std::process::exit(1);
         }
     }

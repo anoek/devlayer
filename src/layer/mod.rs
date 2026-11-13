@@ -8,6 +8,7 @@ mod layer_struct;
 pub mod mount_overlays;
 mod settings;
 mod stop;
+mod supervisor;
 mod unmount;
 
 pub use layer_struct::*;
