@@ -18,9 +18,9 @@ fn test_cli(mut layer: LayerManager) -> Result<()> {
     assert!(layer.last_stdout.contains("net=host"));
     assert!(layer.xfail(&["--net=foobar", "config"]));
 
-    assert!(layer.pass(&["--name", "test-cli", "config"]));
+    assert!(layer.pass(&["--join", "test-cli", "config"]));
     assert!(layer.last_stdout.contains("name=test-cli"));
-    assert!(layer.pass(&["--name=test-cli", "config"]));
+    assert!(layer.pass(&["--join=test-cli", "config"]));
     assert!(layer.last_stdout.contains("name=test-cli"));
 
     assert!(layer.pass(&["--storage-dir=/tmp/layer", "config"]));
@@ -46,14 +46,14 @@ fn test_cli(mut layer: LayerManager) -> Result<()> {
 fn test_cli_with_config(mut layer: LayerManager) -> Result<()> {
     let parent_config = r#"
     net = "none"
-    name = "parent"
+    join = "parent"
     log_level = "trace"
     storage_dir = "/tmp/layer1"
     bind = [".cargo"]
     "#;
     let config = r#"
     net = "host"
-    name = "test-cli-with-config"
+    join = "test-cli-with-config"
     log_level = "info"
     storage_dir = "/tmp/layer2"
     bind = [".cargo"]
@@ -102,8 +102,8 @@ fn test_cli_with_env(mut layer: LayerManager) -> Result<()> {
     assert!(layer.exfail(&["config"], "DEVLAYER_LOG_LEVEL", "foobar"));
     assert!(layer.last_stderr.contains("Invalid log level: foobar"));
 
-    assert!(layer.epass(&["config"], "DEVLAYER_NAME", ""));
-    assert!(layer.epass(&["config"], "DEVLAYER_NAME", "test-cli-with-env"));
+    assert!(layer.epass(&["config"], "DEVLAYER_JOIN", ""));
+    assert!(layer.epass(&["config"], "DEVLAYER_JOIN", "test-cli-with-env"));
 
     assert!(layer.epass(&["config"], "DEVLAYER_STORAGE_DIR", ""));
     assert!(layer.epass(&["config"], "DEVLAYER_STORAGE_DIR", "/tmp/layer"));

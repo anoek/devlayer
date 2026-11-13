@@ -122,7 +122,7 @@ impl LayerManager {
             cmd = Command::new(&self.devlayer_bin);
         }
 
-        cmd.args([format!("--name={}", &self.name)]);
+        cmd.args([format!("--join={}", &self.name)]);
         cmd.args(["config", "layer_dir"]);
         let output = cmd.output()?;
         let base = String::from_utf8_lossy(&output.stdout).to_string();
@@ -181,9 +181,9 @@ impl LayerManager {
         cmd.args(["--no-config"]);
 
         if !self.no_default_options
-            && !args.iter().any(|arg| arg.starts_with("--name"))
+            && !args.iter().any(|arg| arg.starts_with("--join"))
         {
-            cmd.args([format!("--name={}", &self.name)]);
+            cmd.args([format!("--join={}", &self.name)]);
         }
         cmd.args(args);
 
@@ -272,9 +272,9 @@ impl LayerManager {
         }
 
         if !self.no_default_options
-            && !args.iter().any(|arg| arg.starts_with("--name"))
+            && !args.iter().any(|arg| arg.starts_with("--join"))
         {
-            cmd.args([format!("--name={}", &self.name)]);
+            cmd.args([format!("--join={}", &self.name)]);
         }
         cmd.args(args);
         println!(
@@ -327,7 +327,7 @@ impl LayerManager {
         }
 
         if !self.no_default_options {
-            cmd.args([format!("--name={}", &self.name)]);
+            cmd.args([format!("--join={}", &self.name)]);
         }
         cmd.args(args);
 

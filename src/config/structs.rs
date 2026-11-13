@@ -53,7 +53,7 @@ pub enum Network {
 pub struct PartialConfig {
     #[serde(deserialize_with = "deserialize_level_filter", default)]
     pub log_level: Option<log::LevelFilter>,
-    pub name: Option<String>,
+    pub join: Option<String>,
     pub storage_dir: Option<String>,
     pub net: Option<Network>,
     pub ignored: Option<bool>,

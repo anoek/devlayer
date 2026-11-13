@@ -137,7 +137,7 @@ Synchronize changes that might have occurred in your host file system so that th
 Kill all processes in the layer and unmount the filesystems. Note this will not reject any changes
 
 `delete [PATTERNS]`::
-Stop and delete all files associated with the layers matching the provided patterns. If no patterns are provided, deletes the default or --name'd layer.
+Stop and delete all files associated with the layers matching the provided patterns. If no patterns are provided, deletes the default or --join'ed layer.
 
 `clean`::
 Delete stopped ephemeral layers (created with `--new`) that are more than a week old, and all layers left behind by the test suite.
@@ -151,17 +151,17 @@ Print this message or the help of the given subcommand(s)
 `-v, --log-level=<LOG_LEVEL>`::
 Set the log level to one of trace, debug, info, warn, or error. `-v` is shorthand for enabling verbose (trace) logging.
 
-`--name=<NAME>`::
-Name of the layer, defaults to "devlayer". Executables run within the same layer
+`--join=<NAME>`::
+Join the named layer, creating it if it does not exist yet. Defaults to "devlayer". Executables run within the same layer
 name will be run in the same container.
 
 `--new`::
 Create a new layer with an auto-generated timestamp name. This is useful for
-creating ephemeral layers for one-off tasks. Cannot be used with --name or --last.
+creating ephemeral layers for one-off tasks. Cannot be used with --join or --last.
 
 `--last`::
 Use the most recently created layer. This is useful for quickly returning to
-the last layer you were working in. Cannot be used with --name or --new.
+the last layer you were working in. Cannot be used with --join or --new.
 
 `--storage-dir=<STORAGE_DIR>`::
 Base storage directory for all layers. Defaults to `~/.devlayer/`
@@ -276,8 +276,8 @@ When invoked `devlayer` will look for files named `.devlayer.conf` and `.devlaye
 These config files can set most of the CLI options:
 
 ```
-  # Name of the layer
-  name="my-layer"
+  # Name of the layer to join (like --join)
+  join="my-layer"
 
   # Path to the directory where the layer will store its data
   storage_dir="/path/to/devlayer/storage"
@@ -311,7 +311,7 @@ These config files can set most of the CLI options:
 You can also set most of the options with environment variables if you wish:
 
 ```
-  DEVLAYER_NAME="my-layer"
+  DEVLAYER_JOIN="my-layer"
   DEVLAYER_STORAGE_DIR="/path/to/devlayer/storage"
   DEVLAYER_NET="none"
   DEVLAYER_LOG_LEVEL="info"

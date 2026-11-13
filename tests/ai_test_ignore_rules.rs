@@ -724,7 +724,7 @@ fn test_env_flag_includes_ignored(mut layer: LayerManager) -> Result<()> {
         .args([
             "-v",
             "--ignored",
-            &format!("--name={}", &layer.name),
+            &format!("--join={}", &layer.name),
             "status",
             &test_dir,
         ])

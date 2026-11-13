@@ -26,8 +26,8 @@ fn test_stop_all() -> Result<()> {
         let lines: Vec<&str> = ps_output
             .lines()
             .filter(|line| {
-                // excluding --name excludes the layer binary call lines
-                line.contains("sleep 9897135") && !line.contains("--name")
+                // excluding --join excludes the layer binary call lines
+                line.contains("sleep 9897135") && !line.contains("--join")
             })
             .collect();
         if lines.len() == 2 {
@@ -46,7 +46,7 @@ fn test_stop_all() -> Result<()> {
     let lines: Vec<&str> = ps_output
         .lines()
         .filter(|line| {
-            line.contains("sleep 9897135") && !line.contains("--name")
+            line.contains("sleep 9897135") && !line.contains("--join")
         })
         .collect();
     println!("lines.len(): {:?}", lines.len());
@@ -65,7 +65,7 @@ fn test_stop_all() -> Result<()> {
     let lines: Vec<&str> = ps_output
         .lines()
         .filter(|line| {
-            line.contains("sleep 9897135") && !line.contains("--name")
+            line.contains("sleep 9897135") && !line.contains("--join")
         })
         .collect();
     assert!(lines.is_empty());

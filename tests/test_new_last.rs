@@ -9,11 +9,11 @@ fn test_new_last_mutual_exclusivity(mut layer: LayerManager) -> Result<()> {
     layer.no_default_options = true;
 
     assert!(layer.xfail(&["--new", "--last", "ls"]));
-    assert!(layer.xfail(&["--name=foo", "--last", "ls"]));
-    assert!(layer.xfail(&["--name=foo", "--new", "ls"]));
-    assert!(layer.xfail(&["--name=foo", "--new", "--last", "ls"]));
-    assert!(layer.exfail(&["--new", "ls"], "DEVLAYER_NAME", "foo"));
-    assert!(layer.exfail(&["--last", "ls"], "DEVLAYER_NAME", "foo"));
+    assert!(layer.xfail(&["--join=foo", "--last", "ls"]));
+    assert!(layer.xfail(&["--join=foo", "--new", "ls"]));
+    assert!(layer.xfail(&["--join=foo", "--new", "--last", "ls"]));
+    assert!(layer.exfail(&["--new", "ls"], "DEVLAYER_JOIN", "foo"));
+    assert!(layer.exfail(&["--last", "ls"], "DEVLAYER_JOIN", "foo"));
 
     Ok(())
 }

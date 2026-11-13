@@ -456,7 +456,7 @@ fn test_bind_mount_empty_destination() -> Result<()> {
 
     // Run a command that will definitely create a new layer and process bind mounts
     assert!(layer.pass(&[
-        "--name",
+        "--join",
         &test_name,
         "--bind",
         &format!("{}:", tmp),
@@ -484,7 +484,7 @@ fn test_bind_mount_empty_destination_with_sudo() -> Result<()> {
     let output = std::process::Command::new("sudo")
         .arg("-E")
         .arg(env!("CARGO_BIN_EXE_devlayer"))
-        .arg("--name")
+        .arg("--join")
         .arg(&unique_name)
         .arg("--bind")
         .arg(format!("{}:", tmp)) // Empty destination after colon

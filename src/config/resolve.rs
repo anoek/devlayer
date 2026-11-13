@@ -69,11 +69,11 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
 
     // Check for mutually exclusive name options
     if (cli.new || cli.last)
-        && (partial_config.name.is_some() || env::var("DEVLAYER_NAME").is_ok())
+        && (partial_config.join.is_some() || env::var("DEVLAYER_JOIN").is_ok())
     {
-        // If --new or --last is specified, name must not be provided via env or config
+        // If --new or --last is specified, join must not be provided via env or config
         return Err(anyhow::anyhow!(
-            "Cannot use --new or --last when name is specified in config file or environment variable"
+            "Cannot use --new or --last when join is specified in config file or environment variable"
         ));
     }
 
@@ -87,9 +87,9 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         }
     }
     if !cli.new && !cli.last {
-        if let Ok(name) = env::var("DEVLAYER_NAME") {
+        if let Ok(name) = env::var("DEVLAYER_JOIN") {
             if !name.is_empty() {
-                partial_config.name = Some(name);
+                partial_config.join = Some(name);
                 sources.insert("name".into(), "environment".into());
             }
         }
@@ -203,7 +203,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
             uid_gid_home.uid,
             uid_gid_home.gid,
         )?;
-        partial_config.name = Some(name);
+        partial_config.join = Some(name);
         sources.insert("name".into(), "cli --new".into());
     } else if cli.last {
         // Find the most recently created layer
@@ -212,11 +212,11 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
             uid_gid_home.uid,
             uid_gid_home.gid,
         )?;
-        partial_config.name = Some(name);
+        partial_config.join = Some(name);
         sources.insert("name".into(), "cli --last".into());
-    } else if let Some(name) = cli.name {
-        partial_config.name = Some(name);
-        sources.insert("name".into(), "cli".into());
+    } else if let Some(name) = cli.join {
+        partial_config.join = Some(name);
+        sources.insert("name".into(), "cli --join".into());
     }
 
     if let Some(net) = cli.net {
@@ -261,7 +261,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     bind_layers.push(cli_bind_layer);
 
     // If nothing else, fill in with some default values
-    let name = partial_config.name.unwrap_or("devlayer".to_string());
+    let name = partial_config.join.unwrap_or("devlayer".to_string());
     if !sources.contains_key("name") {
         sources.insert("name".into(), "default".into());
     }
@@ -740,8 +740,8 @@ fn merge_configs(
         base.log_level = Some(log_level);
         sources.insert("log_level".into(), source.into());
     }
-    if let Some(name) = override_config.name {
-        base.name = Some(name);
+    if let Some(name) = override_config.join {
+        base.join = Some(name);
         sources.insert("name".into(), source.into());
     }
     if let Some(storage_dir) = override_config.storage_dir {
@@ -1036,7 +1036,7 @@ mod tests {
 
         let override_config = PartialConfig {
             log_level: Some(LevelFilter::Debug),
-            name: Some("test-layer".to_string()),
+            join: Some("test-layer".to_string()),
             storage_dir: Some("/tmp/test".to_string()),
             net: Some(Network::Host),
             ignored: Some(true),
@@ -1068,7 +1068,7 @@ mod tests {
 
         // Verify all fields were merged
         assert_eq!(base.log_level, Some(LevelFilter::Debug));
-        assert_eq!(base.name, Some("test-layer".to_string()));
+        assert_eq!(base.join, Some("test-layer".to_string()));
         assert_eq!(base.storage_dir, Some("/tmp/test".to_string()));
         assert!(matches!(base.net, Some(Network::Host)));
         assert_eq!(base.ignored, Some(true));

@@ -23,16 +23,16 @@ pub struct Args {
     )]
     pub log_level: Option<log::LevelFilter>,
 
-    /// Name of the layer, defaults to "devlayer"
+    /// Join the named layer, creating it if it does not exist yet
     #[arg(long, global = true, value_hint = clap::ValueHint::Other, add = ArgValueCompleter::new(layer_name_completion), conflicts_with_all = &["new", "last"])]
-    pub name: Option<String>,
+    pub join: Option<String>,
 
     /// Create a new layer with an auto-generated timestamp name
-    #[arg(long, global = true, conflicts_with_all = &["name", "last"])]
+    #[arg(long, global = true, conflicts_with_all = &["join", "last"])]
     pub new: bool,
 
     /// Use the most recently created layer
-    #[arg(long, global = true, conflicts_with_all = &["name", "new"])]
+    #[arg(long, global = true, conflicts_with_all = &["join", "new"])]
     pub last: bool,
 
     /// Base storage directory for all layers. Defaults to `~/.devlayer/`

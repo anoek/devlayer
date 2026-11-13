@@ -25,7 +25,7 @@ fn test_weird_sudo_env_variables(layer: LayerManager) -> Result<()> {
 
     let mut cmd = Command::new("sudo");
     cmd.args(["-E", "SUDO_UID=nan", &devlayer_bin]);
-    cmd.args([format!("--name={}", &layer.name)]);
+    cmd.args([format!("--join={}", &layer.name)]);
     let output = cmd.output()?;
     assert!(output.status.code().unwrap() != 0);
     assert!(
@@ -35,7 +35,7 @@ fn test_weird_sudo_env_variables(layer: LayerManager) -> Result<()> {
 
     let mut cmd = Command::new("sudo");
     cmd.args(["-E", "SUDO_GID=nan", &devlayer_bin]);
-    cmd.args([format!("--name={}", &layer.name)]);
+    cmd.args([format!("--join={}", &layer.name)]);
     let output = cmd.output()?;
     assert!(output.status.code().unwrap() != 0);
     assert!(
@@ -45,7 +45,7 @@ fn test_weird_sudo_env_variables(layer: LayerManager) -> Result<()> {
 
     let mut cmd = Command::new("sudo");
     cmd.args(["-E", "SUDO_HOME=", &devlayer_bin]);
-    cmd.args([format!("--name={}", &layer.name)]);
+    cmd.args([format!("--join={}", &layer.name)]);
     let output = cmd.output()?;
     assert!(output.status.code().unwrap() != 0);
     assert!(
@@ -55,7 +55,7 @@ fn test_weird_sudo_env_variables(layer: LayerManager) -> Result<()> {
 
     let mut cmd = Command::new("sudo");
     cmd.args(["-E", "SUDO_HOME=~/foobar", &devlayer_bin]);
-    cmd.args([format!("--name={}", &layer.name)]);
+    cmd.args([format!("--join={}", &layer.name)]);
     let output = cmd.output()?;
     assert!(output.status.code().unwrap() != 0);
 
@@ -66,7 +66,7 @@ fn test_weird_sudo_env_variables(layer: LayerManager) -> Result<()> {
 
     let mut cmd = Command::new("sudo");
     cmd.args(["-E", "SUDO_HOME=/invalid-home-directory", &devlayer_bin]);
-    cmd.args([format!("--name={}", &layer.name)]);
+    cmd.args([format!("--join={}", &layer.name)]);
     let output = cmd.output()?;
     assert!(output.status.code().unwrap() != 0);
 
@@ -98,7 +98,7 @@ fn test_weird_sudo_env_variables(layer: LayerManager) -> Result<()> {
         .as_str(),
         &devlayer_bin,
     ]);
-    cmd.args([format!("--name={}", &layer.name)]);
+    cmd.args([format!("--join={}", &layer.name)]);
     cmd.args(["true"]);
     println!("cmd: {:?}", cmd);
     let output = cmd.output()?;
@@ -127,7 +127,7 @@ fn test_setuid_works_like_sudo(mut layer: LayerManager) -> Result<()> {
     let devlayer_setuid = devlayer_bin + "-setuid";
 
     let mut cmd = Command::new(&devlayer_setuid);
-    cmd.args([format!("--name={}", &layer.name)]);
+    cmd.args([format!("--join={}", &layer.name)]);
     cmd.args(["whoami"]);
     let setuid_output = cmd.output()?;
 

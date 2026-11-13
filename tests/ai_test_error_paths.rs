@@ -46,7 +46,7 @@ fn ai_test_new_with_unusable_storage_dir(
 ) -> Result<()> {
     // --new looks for an unused name in the storage directory, which fails
     // when the storage directory can't be used. --new conflicts with the
-    // --name the fixture normally adds.
+    // --join the fixture normally adds.
     layer.no_default_options = true;
     let storage_dir =
         format!("--storage-dir=/proc/devlayer-coverage-{}", rid());

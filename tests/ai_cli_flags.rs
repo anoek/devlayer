@@ -11,30 +11,30 @@ fn test_flags_before_action(mut layer: LayerManager) -> Result<()> {
     let name = layer.name.clone();
 
     // Test flags before action - traditional style
-    assert!(layer.pass(&["--name", &name, "config"]));
+    assert!(layer.pass(&["--join", &name, "config"]));
     assert!(
         layer
             .last_stdout
             .contains(format!("name={}", name).as_str())
     );
 
-    assert!(layer.pass(&["--name", &name, "--net=host", "config"]));
+    assert!(layer.pass(&["--join", &name, "--net=host", "config"]));
     assert!(layer.last_stdout.contains("net=host"));
 
-    assert!(layer.pass(&["--name", &name, "-v", "config"]));
+    assert!(layer.pass(&["--join", &name, "-v", "config"]));
     assert!(layer.last_stdout.contains("log_level=TRACE"));
 
-    assert!(layer.pass(&["--name", &name, "--log-level=debug", "config"]));
+    assert!(layer.pass(&["--join", &name, "--log-level=debug", "config"]));
     assert!(layer.last_stdout.contains("log_level=DEBUG"));
 
-    assert!(layer.pass(&["--name", &name, "--json", "config"]));
+    assert!(layer.pass(&["--join", &name, "--json", "config"]));
     // JSON output should be valid JSON
     assert!(
         serde_json::from_str::<serde_json::Value>(&layer.last_stdout).is_ok()
     );
 
     // Test a simple action without extra flags
-    assert!(layer.pass(&["--name", &name, "status"]));
+    assert!(layer.pass(&["--join", &name, "status"]));
 
     Ok(())
 }
@@ -46,26 +46,26 @@ fn test_flags_after_action(mut layer: LayerManager) -> Result<()> {
     let name = layer.name.clone();
 
     // Test flags after action - new flexible style
-    assert!(layer.pass(&["config", "--name", "test-after"]));
+    assert!(layer.pass(&["config", "--join", "test-after"]));
     assert!(layer.last_stdout.contains("name=test-after"));
 
-    assert!(layer.pass(&["--name", &name, "config", "--net=host"]));
+    assert!(layer.pass(&["--join", &name, "config", "--net=host"]));
     assert!(layer.last_stdout.contains("net=host"));
 
-    assert!(layer.pass(&["--name", &name, "config", "-v"]));
+    assert!(layer.pass(&["--join", &name, "config", "-v"]));
     assert!(layer.last_stdout.contains("log_level=TRACE"));
 
-    assert!(layer.pass(&["--name", &name, "config", "--log-level=debug"]));
+    assert!(layer.pass(&["--join", &name, "config", "--log-level=debug"]));
     assert!(layer.last_stdout.contains("log_level=DEBUG"));
 
-    assert!(layer.pass(&["--name", &name, "config", "--json"]));
+    assert!(layer.pass(&["--join", &name, "config", "--json"]));
     // JSON output should be valid JSON
     assert!(
         serde_json::from_str::<serde_json::Value>(&layer.last_stdout).is_ok()
     );
 
     // Test a simple action without extra flags
-    assert!(layer.pass(&["--name", &name, "status"]));
+    assert!(layer.pass(&["--join", &name, "status"]));
 
     Ok(())
 }
@@ -73,7 +73,7 @@ fn test_flags_after_action(mut layer: LayerManager) -> Result<()> {
 #[rstest]
 fn test_flags_mixed_position(mut layer: LayerManager) -> Result<()> {
     // Test mixing flags before and after action
-    assert!(layer.pass(&["--name", "test-mixed", "config", "--net=host"]));
+    assert!(layer.pass(&["--join", "test-mixed", "config", "--net=host"]));
     assert!(layer.last_stdout.contains("name=test-mixed"));
     assert!(layer.last_stdout.contains("net=host"));
 
@@ -81,7 +81,7 @@ fn test_flags_mixed_position(mut layer: LayerManager) -> Result<()> {
     assert!(layer.last_stdout.contains("log_level=TRACE"));
     assert!(layer.last_stdout.contains("net=none"));
 
-    assert!(layer.pass(&["--json", "config", "--name=json-test", "-v"]));
+    assert!(layer.pass(&["--json", "config", "--join=json-test", "-v"]));
     let json: serde_json::Value = serde_json::from_str(&layer.last_stdout)?;
     assert_eq!(json["name"], "json-test");
     assert_eq!(json["log_level"], "TRACE");
