@@ -1,7 +1,7 @@
 use super::cgroup::remove_cgroup;
 use super::mount_overlays::MountHash;
 use crate::config::{BindMount, BindMountOptions, Config, Network};
-use crate::layer::Layer;
+use crate::layer::{Layer, LayerOrigin};
 #[cfg(feature = "coverage")]
 use crate::util::CLONE_FS;
 use crate::util::Lock;
@@ -174,6 +174,12 @@ impl Layer {
             ),
         )?;
 
+        if config.bind_cwd && config.created_in == Path::new("/") {
+            return Err(anyhow!(
+                "Refusing to bind / into the layer; run from a project directory or pass --no-bind-cwd"
+            ));
+        }
+
         let mut config = config.clone();
         config.bind_mounts.push(BindMount {
             argument: "data".to_string(),
@@ -211,6 +217,16 @@ impl Layer {
                 return Err(e);
             }
         };
+
+        /* Record where the layer was created the first time it starts. A
+         * restarted layer keeps its original origin. */
+        if !LayerOrigin::path(&layer.base).exists() {
+            LayerOrigin {
+                created_in: config.created_in.clone(),
+                bind_cwd: config.bind_cwd,
+            }
+            .save(&layer.base)?;
+        }
 
         Ok(layer)
     }

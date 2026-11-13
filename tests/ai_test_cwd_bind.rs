@@ -142,3 +142,55 @@ fn ai_test_no_bind_cwd_persists(mut layer: LayerManager) -> Result<()> {
     assert!(!dir.join("still-layered").exists());
     Ok(())
 }
+
+/// Actions that never start a layer must work from / even though / can't be
+/// bound.
+#[rstest]
+fn ai_test_root_non_creating_actions_ok(mut layer: LayerManager) -> Result<()> {
+    layer.set_bind_cwd(true);
+    layer.cwd = Some(PathBuf::from("/"));
+    assert!(layer.pass(&["list"]));
+    assert!(layer.pass(&["config", "name"]));
+    Ok(())
+}
+
+/// A project directory whose path contains ':' is bound as a plain path, not
+/// parsed as source:target:options.
+#[rstest]
+fn ai_test_cwd_with_colon(mut layer: LayerManager) -> Result<()> {
+    let dir = std::env::current_dir()?.join(layer.test_filename("proj:v2"));
+    std::fs::create_dir_all(&dir)?;
+    layer.set_bind_cwd(true);
+    layer.cwd = Some(dir.clone());
+
+    layer.run(&["touch", "colon-file"])?;
+    assert!(dir.join("colon-file").exists());
+    Ok(())
+}
+
+/// The layer's data directory is live inside the layer, so the recorded
+/// origin must not be stored there: a program in the layer must not be able
+/// to change which directory is bound on the next start.
+#[rstest]
+fn ai_test_origin_not_writable_from_layer(
+    mut layer: LayerManager,
+) -> Result<()> {
+    let dir = project_dir(&layer)?;
+    layer.set_bind_cwd(true);
+    layer.cwd = Some(dir.clone());
+    layer.run(&["--no-bind-cwd", "true"])?;
+
+    let settings = layer.dir()?.join("data").join("settings.json");
+    let script = format!(
+        "f={}; sed 's|\"bind_cwd\": false|\"bind_cwd\": true|; s|\"created_in\": \"[^\"]*\"|\"created_in\": \"/\"|' $f > $f.new && mv $f.new $f",
+        settings.display()
+    );
+    layer.run(&["sh", "-c", &script])?;
+    layer.run(&["stop"])?;
+
+    layer.run(&["config", "created_in"])?;
+    assert_eq!(layer.last_stdout.trim(), dir.display().to_string());
+    layer.run(&["config", "bind_cwd"])?;
+    assert_eq!(layer.last_stdout.trim(), "false");
+    Ok(())
+}

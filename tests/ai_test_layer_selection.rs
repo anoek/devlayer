@@ -176,12 +176,13 @@ fn ai_test_stop_delete_default_to_last(layer: LayerManager) -> Result<()> {
 }
 
 #[rstest]
-fn ai_test_list_clean_sync_no_layer_ok(layer: LayerManager) -> Result<()> {
+fn ai_test_list_config_sync_no_layer_ok(layer: LayerManager) -> Result<()> {
     let mut sel = Selection::new(layer)?;
     let empty = sel.dir("empty")?;
 
     assert!(sel.pass(&empty, &["list"]));
-    assert!(sel.pass(&empty, &["clean", "-y"]));
+    // `clean` is not run here: it would delete real stopped ephemeral layers in
+    // the shared storage directory. Its default selection is unit tested.
     assert!(sel.pass(&empty, &["config"]));
     // sync drops system caches, which may not be allowed inside containers;
     // it must not fail because there is no layer for this directory

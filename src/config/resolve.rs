@@ -1,7 +1,7 @@
 use super::PartialConfig;
 use super::limits::{available_cpus, parse_cpus, parse_memory};
 use crate::config::{BindMount, BindMountOptions, Network};
-use crate::layer::LayerSettings;
+use crate::layer::LayerOrigin;
 use crate::util::{
     can_access, can_mkdir, expand_tilde_path, find_mount_point, mkdir,
 };
@@ -19,6 +19,25 @@ use std::{
 };
 
 use super::cli::{Action, Args};
+
+/// A read-write bind of `path` onto itself. Unlike parse_bind_mount, ':' in
+/// the path has no special meaning.
+fn path_bind_mount(path: &Path) -> Result<BindMount> {
+    let canonical = path.canonicalize().context(format!(
+        "Failed to canonicalize source path: {}",
+        path.display()
+    ))?;
+    Ok(BindMount {
+        source: canonical.clone(),
+        target: canonical,
+        options: BindMountOptions::ReadWrite,
+        argument: path.display().to_string(),
+    })
+}
+
+fn path_bind_mounts<P: AsRef<Path>>(paths: Vec<P>) -> Result<Vec<BindMount>> {
+    paths.iter().map(|p| path_bind_mount(p.as_ref())).collect()
+}
 
 /// Parses bind mount string and expands tildes
 /// Format: source[:target[:options]]
@@ -382,31 +401,38 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     let (created_in, bind_cwd) = resolve_origin(&layer_dir, &cwd, no_bind_cwd)?;
     sources.insert("created_in".into(), "layer settings or cwd".into());
     sources.insert("bind_cwd".into(), "layer settings or no_bind_cwd".into());
+    let mut path_layers: Vec<Vec<BindMount>> = vec![];
     if bind_cwd {
-        bind_layers.insert(0, vec![created_in.display().to_string()]);
+        path_layers.insert(0, vec![path_bind_mount(&created_in)?]);
     }
 
     // LLM tool binds sit just above the default bind mounts
     if !no_default_llm_binds {
-        bind_layers.insert(0, get_llm_bind_mounts(&uid_gid_home.home));
+        path_layers.insert(
+            0,
+            path_bind_mounts(get_llm_bind_mounts(&uid_gid_home.home))?,
+        );
     }
 
     // Default bind mounts, including audio, are the lowest precedence layer
     if !no_default_binds {
         let mut default_binds = get_default_bind_mounts(&net);
         default_binds.extend(get_audio_bind_mounts());
-        bind_layers.insert(0, default_binds);
+        path_layers.insert(0, path_bind_mounts(default_binds)?);
     }
 
     // Resolve bind mounts layer by layer from lowest to highest precedence.
     // Conflicting mounts within a single layer are an error, while a mount in
     // a higher precedence layer overrides any mount with the same target in a
     // lower precedence layer.
+    let parsed_layers = bind_layers
+        .iter()
+        .map(|layer| layer.iter().map(|m| parse_bind_mount(m)).collect())
+        .collect::<Result<Vec<Vec<BindMount>>>>()?;
     let mut target_map: HashMap<PathBuf, BindMount> = HashMap::new();
-    for layer in bind_layers {
+    for layer in path_layers.into_iter().chain(parsed_layers) {
         let mut layer_map: HashMap<PathBuf, BindMount> = HashMap::new();
         for mount in layer {
-            let mount = parse_bind_mount(&mount)?;
             if let Some(existing) = layer_map.get(&mount.target) {
                 if existing.source != mount.source
                     || existing.options != mount.options
@@ -511,30 +537,22 @@ fn get_default_bind_mounts(net: &Network) -> Vec<String> {
 /// bound into the layer. An existing layer keeps the values recorded in its
 /// settings when it was created, so re-entering it from another directory, or
 /// without --no-bind-cwd, does not change its binds. A new layer uses `cwd`.
+/// Binding / is refused when a layer starts, not here, so actions that don't
+/// start a layer still work from /.
 pub fn resolve_origin(
     layer_dir: &Path,
     cwd: &Path,
     no_bind_cwd: bool,
 ) -> Result<(PathBuf, bool)> {
-    let settings_path = layer_dir.join("data").join("settings.json");
-    if let Ok(settings) = LayerSettings::load_from_file(&settings_path)
-        && let (Some(created_in), Some(bind_cwd)) =
-            (settings.created_in, settings.bind_cwd)
-    {
-        return Ok((created_in, bind_cwd));
+    if let Some(origin) = LayerOrigin::load(layer_dir) {
+        return Ok((origin.created_in, origin.bind_cwd));
     }
 
     let created_in = cwd.canonicalize().context(format!(
         "Failed to canonicalize current directory {}",
         cwd.display()
     ))?;
-    let bind_cwd = !no_bind_cwd;
-    if bind_cwd && created_in == Path::new("/") {
-        return Err(anyhow::anyhow!(
-            "Refusing to bind / into the layer; run from a project directory or pass --no-bind-cwd"
-        ));
-    }
-    Ok((created_in, bind_cwd))
+    Ok((created_in, !no_bind_cwd))
 }
 
 /// Well-known AI tool config and state paths, relative to the home directory,
@@ -999,15 +1017,12 @@ fn find_last_layer(storage_dir: &Path, cwd: &Path) -> Result<String> {
             .flatten()
             .filter_map(|entry| {
                 let path = entry.path();
-                let settings = LayerSettings::load_from_file(
-                    &path.join("data").join("settings.json"),
-                )
-                .ok()?;
+                let origin = LayerOrigin::load(&path)?;
                 let metadata = entry.metadata().ok()?;
                 let created =
                     metadata.created().or_else(|_| metadata.modified()).ok()?;
                 Some((
-                    settings.created_in?,
+                    origin.created_in,
                     entry.file_name().to_string_lossy().to_string(),
                     created,
                 ))
@@ -1110,6 +1125,16 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
         std::fs::create_dir_all(&home).unwrap();
         home
+    }
+
+    #[test]
+    fn path_bind_mount_keeps_colons() {
+        let home = fake_home("with:colon");
+        let mount = path_bind_mount(&home).unwrap();
+        assert_eq!(mount.source, home.canonicalize().unwrap());
+        assert_eq!(mount.target, mount.source);
+        assert_eq!(mount.options, BindMountOptions::ReadWrite);
+        std::fs::remove_dir_all(&home).unwrap();
     }
 
     #[test]

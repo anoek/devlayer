@@ -15,12 +15,39 @@ pub struct LayerSettings {
     pub cpus: Option<f64>,
     #[serde(default)]
     pub memory: Option<u64>,
-    /// Canonical directory the layer was created in
-    #[serde(default)]
-    pub created_in: Option<PathBuf>,
-    /// Whether created_in is bound read-write into the layer
-    #[serde(default)]
-    pub bind_cwd: Option<bool>,
+}
+
+/// Where a layer was created and whether that directory is bound into it.
+/// This lives in the layer's base directory rather than in data/settings.json
+/// because the data directory is bound read-write into the layer, so programs
+/// in the layer could otherwise change which host directory is bound live.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LayerOrigin {
+    pub created_in: PathBuf,
+    pub bind_cwd: bool,
+}
+
+impl LayerOrigin {
+    pub fn path(layer_dir: &Path) -> PathBuf {
+        layer_dir.join("origin.json")
+    }
+
+    /// Loads the origin recorded for the layer in `layer_dir`, if there is a
+    /// valid one
+    pub fn load(layer_dir: &Path) -> Option<Self> {
+        let json = std::fs::read_to_string(Self::path(layer_dir)).ok()?;
+        let origin: Self = serde_json::from_str(&json).ok()?;
+        origin.created_in.is_absolute().then_some(origin)
+    }
+
+    pub fn save(&self, layer_dir: &Path) -> Result<()> {
+        let json = serde_json::to_string_pretty(self)
+            .context("Failed to serialize layer origin to JSON")?;
+        std::fs::write(Self::path(layer_dir), json).context(format!(
+            "Failed to write {}",
+            Self::path(layer_dir).display()
+        ))
+    }
 }
 
 impl LayerSettings {
@@ -32,8 +59,6 @@ impl LayerSettings {
             bind_mounts: config.bind_mounts.clone(),
             cpus: config.cpus,
             memory: config.memory,
-            created_in: Some(config.created_in.clone()),
-            bind_cwd: Some(config.bind_cwd),
         }
     }
 
