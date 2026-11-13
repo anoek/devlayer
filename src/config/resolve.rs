@@ -4,7 +4,7 @@ use crate::config::{BindMount, BindMountOptions, Network};
 use crate::util::{
     can_access, can_mkdir, expand_tilde_path, find_mount_point, mkdir,
 };
-use crate::{config::Config, types::UidGidHome, util::resolve_uid_gid_home};
+use crate::{config::Config, util::resolve_uid_gid_home};
 use anyhow::{Context, Result};
 use chrono::Local;
 use log::trace;
@@ -161,6 +161,17 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("no_default_binds".into(), "environment".into());
     }
 
+    if let Ok(value) = env::var("DEVLAYER_NO_DEFAULT_LLM_BINDS") {
+        let value = bool::from_str(&value).map_err(|_| {
+            anyhow::anyhow!(
+                "Invalid value for DEVLAYER_NO_DEFAULT_LLM_BINDS: {}",
+                value
+            )
+        })?;
+        partial_config.no_default_llm_binds = Some(value);
+        sources.insert("no_default_llm_binds".into(), "environment".into());
+    }
+
     for (var, key, field) in [
         ("DEVLAYER_CPUS", "cpus", &mut partial_config.cpus),
         ("DEVLAYER_MEMORY", "memory", &mut partial_config.memory),
@@ -222,6 +233,11 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("no_default_binds".into(), "cli".into());
     }
 
+    if cli.no_default_llm_binds {
+        partial_config.no_default_llm_binds = Some(true);
+        sources.insert("no_default_llm_binds".into(), "cli".into());
+    }
+
     if let Some(cpus) = cli.cpus {
         partial_config.cpus = Some(cpus);
         sources.insert("cpus".into(), "cli".into());
@@ -262,6 +278,12 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     let no_default_binds = partial_config.no_default_binds.unwrap_or(false);
     if !sources.contains_key("no_default_binds") {
         sources.insert("no_default_binds".into(), "default".into());
+    }
+
+    let no_default_llm_binds =
+        partial_config.no_default_llm_binds.unwrap_or(false);
+    if !sources.contains_key("no_default_llm_binds") {
+        sources.insert("no_default_llm_binds".into(), "default".into());
     }
 
     let cpus = partial_config
@@ -314,9 +336,14 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         .join(cwd.strip_prefix(&mp)?);
     sources.insert("overlay_cwd".into(), "derived from storage_dir".into());
 
+    // LLM tool binds sit just above the default bind mounts
+    if !no_default_llm_binds {
+        bind_layers.insert(0, get_llm_bind_mounts(&uid_gid_home.home));
+    }
+
     // Default bind mounts, including audio, are the lowest precedence layer
     if !no_default_binds {
-        let mut default_binds = get_default_bind_mounts(&net, &uid_gid_home);
+        let mut default_binds = get_default_bind_mounts(&net);
         default_binds.extend(get_audio_bind_mounts());
         bind_layers.insert(0, default_binds);
     }
@@ -369,6 +396,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources,
         bind_mounts,
         no_default_binds,
+        no_default_llm_binds,
         cpus,
         memory,
         config_files,
@@ -382,10 +410,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     Ok(config)
 }
 
-fn get_default_bind_mounts(
-    net: &Network,
-    uid_gid_home: &UidGidHome,
-) -> Vec<String> {
+fn get_default_bind_mounts(net: &Network) -> Vec<String> {
     let mut default_binds = Vec::new();
 
     // System binds
@@ -427,21 +452,39 @@ fn get_default_bind_mounts(
         }
     }
 
-    // User directories for AI coding assistants
-    let user_dirs = [
-        ".claude", // Claude artifacts and settings
-        ".aider",  // Aider chat history and settings
-        ".cursor", // Cursor settings
-    ];
-
-    for dir in &user_dirs {
-        let user_dir = uid_gid_home.home.join(dir);
-        if user_dir.exists() {
-            default_binds.push(format!("{}", user_dir.display()));
-        }
-    }
-
     default_binds
+}
+
+/// Well-known AI tool config and state paths, relative to the home directory,
+/// that are bound into layers by default unless --no-default-llm-binds is set
+pub const LLM_BIND_PATHS: &[&str] = &[
+    ".claude",
+    ".claude.json",
+    ".codex",
+    ".pi",
+    ".gemini",
+    ".qwen",
+    ".aider",
+    ".cursor",
+    ".config/opencode",
+    ".local/share/opencode",
+    ".config/goose",
+    ".continue",
+    ".codeium",
+    ".config/github-copilot",
+    ".factory",
+    ".config/crush",
+    ".local/share/crush",
+];
+
+/// Returns the LLM_BIND_PATHS that exist under `home`, as absolute paths
+fn get_llm_bind_mounts(home: &Path) -> Vec<String> {
+    LLM_BIND_PATHS
+        .iter()
+        .map(|path| home.join(path))
+        .filter(|path| path.exists())
+        .map(|path| path.display().to_string())
+        .collect()
 }
 
 fn get_audio_bind_mounts() -> Vec<String> {
@@ -733,6 +776,10 @@ fn merge_configs(
         base.no_default_binds = Some(no_default_binds);
         sources.insert("no_default_binds".into(), source.into());
     }
+    if let Some(value) = override_config.no_default_llm_binds {
+        base.no_default_llm_binds = Some(value);
+        sources.insert("no_default_llm_binds".into(), source.into());
+    }
     if let Some(cpus) = override_config.cpus {
         base.cpus = Some(cpus);
         sources.insert("cpus".into(), source.into());
@@ -872,17 +919,54 @@ mod tests {
     // Mutex to ensure XDG_RUNTIME_DIR tests don't interfere with each other
     static XDG_TEST_MUTEX: Mutex<()> = Mutex::new(());
 
+    /// Creates an empty, unique fake home directory for LLM bind tests
+    fn fake_home(tag: &str) -> PathBuf {
+        let home = std::env::temp_dir().join(format!(
+            "devlayer-coverage-llm-home-{}-{}",
+            tag,
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        home
+    }
+
+    #[test]
+    fn llm_binds_skip_missing_paths() {
+        let home = fake_home("missing");
+        std::fs::create_dir_all(home.join(".codex")).unwrap();
+        std::fs::write(home.join(".claude.json"), "{}").unwrap();
+
+        assert_eq!(
+            get_llm_bind_mounts(&home),
+            vec![
+                home.join(".claude.json").display().to_string(),
+                home.join(".codex").display().to_string(),
+            ]
+        );
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn llm_binds_all_present() {
+        let home = fake_home("all");
+        for path in LLM_BIND_PATHS {
+            std::fs::create_dir_all(home.join(path)).unwrap();
+        }
+
+        let binds = get_llm_bind_mounts(&home);
+        assert_eq!(binds.len(), 17);
+        let expected: Vec<String> = LLM_BIND_PATHS
+            .iter()
+            .map(|p| home.join(p).display().to_string())
+            .collect();
+        assert_eq!(binds, expected);
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+
     #[test]
     fn ai_test_get_default_bind_mounts_xdg_runtime_dir() {
         let _guard = XDG_TEST_MUTEX.lock().unwrap();
-        use crate::types::UidGidHome;
-        use std::path::PathBuf;
-
-        let uid_gid_home = UidGidHome {
-            uid: Uid::from_raw(1000),
-            gid: Gid::from_raw(1000),
-            home: PathBuf::from("/home/test"),
-        };
 
         // Test 1: XDG_RUNTIME_DIR is set, but TEST_EMPTY_XDG_RUNTIME_DIR overrides it
         unsafe {
@@ -890,7 +974,7 @@ mod tests {
             env::set_var("TEST_EMPTY_XDG_RUNTIME_DIR", "1");
         }
 
-        let binds = get_default_bind_mounts(&Network::Host, &uid_gid_home);
+        let binds = get_default_bind_mounts(&Network::Host);
         assert!(!binds.iter().any(|b| b.contains("/tmp/xdg/bus")));
 
         unsafe {
@@ -902,7 +986,7 @@ mod tests {
             env::remove_var("XDG_RUNTIME_DIR");
         }
 
-        let binds = get_default_bind_mounts(&Network::Host, &uid_gid_home);
+        let binds = get_default_bind_mounts(&Network::Host);
         assert!(!binds.iter().any(|b| b.contains("/bus")));
 
         // Test 3: XDG_RUNTIME_DIR is set to a test path that doesn't exist
@@ -911,7 +995,7 @@ mod tests {
         }
 
         // Since /tmp/test_xdg_runtime_dir/bus won't exist, it shouldn't be included
-        let binds = get_default_bind_mounts(&Network::Host, &uid_gid_home);
+        let binds = get_default_bind_mounts(&Network::Host);
         assert!(
             !binds
                 .iter()
@@ -919,7 +1003,7 @@ mod tests {
         );
 
         // Test 4: Test with Network::None (should not include any XDG bus)
-        let binds = get_default_bind_mounts(&Network::None, &uid_gid_home);
+        let binds = get_default_bind_mounts(&Network::None);
         assert!(!binds.iter().any(|b| b.contains("/bus")));
     }
 
@@ -937,6 +1021,7 @@ mod tests {
             log_level: LevelFilter::Info,
             bind_mounts: vec![],
             no_default_binds: false,
+            no_default_llm_binds: false,
             cpus: None,
             memory: None,
             config_files: vec![],
@@ -1014,6 +1099,7 @@ mod tests {
             ]),
             mask: Some(vec!["/tmp/test3".to_string()]),
             no_default_binds: Some(true),
+            no_default_llm_binds: Some(true),
             cpus: Some("-2".to_string()),
             memory: Some("4G".to_string()),
         };
@@ -1041,6 +1127,11 @@ mod tests {
         assert_eq!(base.ignored, Some(true));
         assert_eq!(base.cpus, Some("-2".to_string()));
         assert_eq!(base.memory, Some("4G".to_string()));
+        assert_eq!(base.no_default_llm_binds, Some(true));
+        assert_eq!(
+            sources.get("no_default_llm_binds"),
+            Some(&"test-config".to_string())
+        );
         assert_eq!(sources.get("cpus"), Some(&"test-config".to_string()));
         assert_eq!(sources.get("memory"), Some(&"test-config".to_string()));
 

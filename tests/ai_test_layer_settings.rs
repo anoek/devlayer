@@ -27,6 +27,7 @@ fn create_test_config() -> ::devlayer::config::Config {
         ignored: false,
         bind_mounts: Vec::new(),
         no_default_binds: false,
+        no_default_llm_binds: false,
         cpus: None,
         memory: None,
         config_files: Vec::new(),

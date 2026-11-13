@@ -206,6 +206,18 @@ Audio is on by default: the PipeWire and PulseAudio sockets from
 Note that this also allows programs in the layer to record from your
 microphone. Use `--no-default-binds` to turn audio off.
 
+`--no-default-llm-binds`::
+Disable the default binds of well-known AI tool config and state, so that
+logins, history and settings of tools you run in the layer are not shared with
+your host. By default the following paths in your home directory are bound into
+the layer when they exist: `.claude`, `.claude.json`, `.codex`, `.pi`,
+`.gemini`, `.qwen`, `.aider`, `.cursor`, `.config/opencode`,
+`.local/share/opencode`, `.config/goose`, `.continue`, `.codeium`,
+`.config/github-copilot`, `.factory`, `.config/crush` and `.local/share/crush`.
+This is independent of `--no-default-binds`. Other credentials such as SSH keys
+or GitHub tokens are never bound by default; add them with `--bind` if you want
+them.
+
 `--cpus=<CPUS>`::
 Limit how many CPUs the layer can use. Fractional values such as `1.5` are
 allowed. Negative values mean all but that many CPUs, so `--cpus=-2` on a 32

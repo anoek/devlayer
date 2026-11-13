@@ -107,7 +107,13 @@ fn test_no_default_binds_flag(mut layer: LayerManager) -> Result<()> {
     fs::create_dir_all(&test1)?;
 
     // Test that custom binds work with --no-default-binds
-    assert!(layer.pass(&["--no-default-binds", "--bind", &test1, "config"]));
+    assert!(layer.pass(&[
+        "--no-default-binds",
+        "--no-default-llm-binds",
+        "--bind",
+        &test1,
+        "config"
+    ]));
 
     // Should only contain the custom bind mount
     assert!(layer.last_stdout.contains(&test1));
@@ -126,7 +132,7 @@ fn test_no_default_binds_env(mut layer: LayerManager) -> Result<()> {
 
     // Test that no default binds works via environment variable
     layer.run_with_env(
-        &["--no-config", "config"],
+        &["--no-default-llm-binds", "--no-config", "config"],
         "DEVLAYER_NO_DEFAULT_BINDS",
         "true",
     )?;
@@ -158,7 +164,12 @@ fn test_bind_mount_env_parsing() -> Result<()> {
 
     // Test empty env var
     layer.run_with_env(
-        &["--no-default-binds", "--no-config", "config"],
+        &[
+            "--no-default-binds",
+            "--no-default-llm-binds",
+            "--no-config",
+            "config",
+        ],
         "DEVLAYER_BIND",
         "",
     )?;
@@ -175,7 +186,12 @@ fn test_bind_mount_env_parsing() -> Result<()> {
     fs::create_dir_all(&test2)?;
 
     layer.run_with_env(
-        &["--no-default-binds", "--no-config", "config"],
+        &[
+            "--no-default-binds",
+            "--no-default-llm-binds",
+            "--no-config",
+            "config",
+        ],
         "DEVLAYER_BIND",
         &format!("{},{},", test1, test2),
     )?;
@@ -196,7 +212,12 @@ fn test_bind_mount_env_parsing() -> Result<()> {
 
     // Test whitespace-only env var
     layer.run_with_env(
-        &["--no-default-binds", "--no-config", "config"],
+        &[
+            "--no-default-binds",
+            "--no-default-llm-binds",
+            "--no-config",
+            "config",
+        ],
         "DEVLAYER_BIND",
         "   ",
     )?;
@@ -222,7 +243,7 @@ fn test_bind_mount_env_with_options(mut layer: LayerManager) -> Result<()> {
 
     // Test environment variable with read-only options
     layer.run_with_env(
-        &["--no-default-binds", "config"],
+        &["--no-default-binds", "--no-default-llm-binds", "config"],
         "DEVLAYER_BIND",
         &format!("{}::ro,{}::ro", test1, test2),
     )?;
@@ -233,7 +254,7 @@ fn test_bind_mount_env_with_options(mut layer: LayerManager) -> Result<()> {
 
     // Test mixed read-only and read-write mounts
     layer.run_with_env(
-        &["--no-default-binds", "config"],
+        &["--no-default-binds", "--no-default-llm-binds", "config"],
         "DEVLAYER_BIND",
         &format!("{},{}", test3, test4),
     )?;

@@ -35,6 +35,7 @@ fn ai_test_bind_higher_precedence_config_overrides(
     // Later --config files take precedence over earlier ones
     layer.run(&[
         "--no-default-binds",
+        "--no-default-llm-binds",
         "--config",
         &low,
         "--config",
@@ -46,6 +47,7 @@ fn ai_test_bind_higher_precedence_config_overrides(
 
     layer.run(&[
         "--no-default-binds",
+        "--no-default-llm-binds",
         "--config",
         &high,
         "--config",
@@ -107,6 +109,7 @@ fn ai_test_bind_identical_within_config_is_deduplicated(
 
     layer.run(&[
         "--no-default-binds",
+        "--no-default-llm-binds",
         "--config",
         &config,
         "config",
@@ -127,6 +130,7 @@ fn ai_test_mask_in_higher_config_overrides_bind(
 
     layer.run(&[
         "--no-default-binds",
+        "--no-default-llm-binds",
         "--config",
         &low,
         "--config",
@@ -153,7 +157,14 @@ fn ai_test_bind_env_overrides_config(mut layer: LayerManager) -> Result<()> {
         write_config(&layer, "config", &format!("bind = [\"{dir}\"]"))?;
 
     layer.run_with_env(
-        &["--no-default-binds", "--config", &config, "config", "bind"],
+        &[
+            "--no-default-binds",
+            "--no-default-llm-binds",
+            "--config",
+            &config,
+            "config",
+            "bind",
+        ],
         "DEVLAYER_BIND",
         &format!("{dir}::ro"),
     )?;
@@ -161,7 +172,7 @@ fn ai_test_bind_env_overrides_config(mut layer: LayerManager) -> Result<()> {
 
     // Conflicts within the environment layer still fail
     assert!(layer.exfail(
-        &["--no-default-binds", "config"],
+        &["--no-default-binds", "--no-default-llm-binds", "config"],
         "DEVLAYER_BIND",
         &format!("{dir},{dir}::ro"),
     ));
@@ -180,6 +191,7 @@ fn ai_test_bind_cli_overrides_config_and_env(
     layer.run_with_env(
         &[
             "--no-default-binds",
+            "--no-default-llm-binds",
             "--config",
             &config,
             "--bind",
@@ -195,6 +207,7 @@ fn ai_test_bind_cli_overrides_config_and_env(
     // A CLI mask overrides a bind from a config file
     layer.run(&[
         "--no-default-binds",
+        "--no-default-llm-binds",
         "--config",
         &config,
         "--mask",

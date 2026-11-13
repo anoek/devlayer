@@ -76,6 +76,11 @@ pub struct Args {
     #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
     pub no_default_binds: bool,
 
+    /// Disable default binds of well-known AI tool config and state, such as
+    /// ~/.claude, ~/.claude.json, ~/.codex and ~/.gemini
+    #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
+    pub no_default_llm_binds: bool,
+
     /// Limit how many CPUs the layer can use. Fractional values such as 1.5
     /// are allowed. Negative values mean all but that many CPUs, so -2 on a
     /// 32 CPU machine allows the layer to use 30. Use "unlimited" to remove
