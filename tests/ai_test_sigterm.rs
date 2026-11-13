@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 #[rstest]
 fn ai_test_sigterm_stops_layer(mut layer: LayerManager) -> Result<()> {
-    layer.run(&["true"])?;
+    layer.hold()?;
 
     layer.run(&["config", "layer_dir"])?;
     let pid_file = format!("{}.pid", layer.last_stdout.trim());

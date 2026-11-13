@@ -41,6 +41,7 @@ use uuid::Uuid;
 unsafe extern "C" {
     fn __llvm_profile_set_filename(filename: *const i8);
     fn __llvm_profile_dump();
+    fn __llvm_profile_reset_counters();
 }
 
 const TMPFS_SIZE: i32 = 64 * 1024 * 1024; // 64MB, because that's what docker does
@@ -1141,6 +1142,9 @@ impl Layer {
                     .as_ptr(),
                 );
                 __llvm_profile_dump();
+                // A later dump is skipped unless the counters are reset,
+                // after which it writes what ran since (merged by %m)
+                __llvm_profile_reset_counters();
             }
         };
         #[cfg(feature = "coverage")]

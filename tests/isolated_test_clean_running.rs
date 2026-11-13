@@ -13,7 +13,7 @@ fn test_clean_deletes_running_test_layers() -> Result<()> {
     let mut layer = layer();
     let name = layer.name.clone();
 
-    layer.run(&["true"])?;
+    layer.hold()?;
     layer.run(&["list"])?;
     assert!(layer.last_stdout.contains("Running layers:"));
     assert!(layer.last_stdout.contains(&name));

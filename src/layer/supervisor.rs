@@ -5,7 +5,7 @@
 
 use crate::layer::Layer;
 use crate::layer::cgroup::remove_cgroup;
-use crate::util::{Lock, get_layer_pid_path, get_running_layer_pid};
+use crate::util::{Lock, get_running_layer_pid};
 use anyhow::{Context, Result};
 use log::trace;
 use nix::sys::wait::waitpid;
@@ -51,11 +51,11 @@ pub(super) fn detach() {
 pub(super) fn supervise(layer: &Layer, pid1: Pid, own_cgroup: bool) -> ! {
     trace!("Supervising layer '{}' with PID 1 {}", layer.name, pid1);
     while let Err(nix::errno::Errno::EINTR) = waitpid(pid1, None) {}
-    let _ = cleanup(layer, pid1, own_cgroup);
+    let _ = cleanup(layer, own_cgroup);
     std::process::exit(0);
 }
 
-fn cleanup(layer: &Layer, pid1: Pid, own_cgroup: bool) -> Result<()> {
+fn cleanup(layer: &Layer, own_cgroup: bool) -> Result<()> {
     let storage_dir = layer.base.parent().unwrap_or(Path::new("/"));
 
     /* Without a lock file the layer was deleted, which already stopped and
@@ -64,16 +64,10 @@ fn cleanup(layer: &Layer, pid1: Pid, own_cgroup: bool) -> Result<()> {
         return Ok(());
     };
 
-    /* The layer was restarted, leave the new instance alone */
+    /* If the pid file names a running PID 1, the layer was restarted, so
+     * leave the new instance alone. Otherwise this removes the pid file. */
     if get_running_layer_pid(storage_dir, &layer.name).is_some() {
         return Ok(());
-    }
-
-    let pid_file = get_layer_pid_path(storage_dir, &layer.name);
-    if std::fs::read_to_string(&pid_file)
-        .is_ok_and(|pid| pid.trim() == pid1.to_string())
-    {
-        std::fs::remove_file(&pid_file)?;
     }
 
     let cgroup = layer.cgroup_path();

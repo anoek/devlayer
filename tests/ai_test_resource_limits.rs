@@ -467,9 +467,17 @@ fn ai_test_limits_no_swap_accounting(mut layer: LayerManager) -> Result<()> {
 
     // Only memory is limited (config files are skipped since they may limit
     // cpus too). Without swap accounting we can limit memory but not swap.
+    // The layer is left running, so the commands after the first one join
+    // the layer started without swap accounting
     let memory_only = ["--no-config", "--memory=64M", "cat"];
     layer.run_with_env(
-        &[&memory_only[..], &["/sys/fs/cgroup/memory.max"]].concat(),
+        &[
+            "--no-config",
+            "--memory=64M",
+            "sh",
+            "-c",
+            "cat /sys/fs/cgroup/memory.max; sleep 3600 >/dev/null 2>&1 &",
+        ],
         "TEST_NO_SWAP_ACCOUNTING",
         "1",
     )?;

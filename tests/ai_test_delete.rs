@@ -276,7 +276,7 @@ fn test_delete_running_layer_by_name() -> Result<()> {
     let name = layer.name.clone();
 
     // Create and run a layer
-    layer.run(&["true"])?;
+    layer.hold()?;
 
     // Accept the layer
     layer.run(&["accept", "."])?;

@@ -2,7 +2,9 @@ mod fixtures;
 
 use anyhow::{Result, anyhow};
 use fixtures::*;
+use nix::fcntl::{Flock, FlockArg};
 use rstest::*;
+use std::fs::File;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -184,5 +186,54 @@ fn ai_test_idle_shutdown_removes_cgroup(mut layer: LayerManager) -> Result<()> {
         layer.name
     ));
     assert!(wait_until(Duration::from_secs(5), || !cgroup.exists()));
+    Ok(())
+}
+
+/// When a layer was restarted by the time its old supervisor gets to clean
+/// up, the supervisor leaves the new instance's pid file and mounts alone
+#[rstest]
+fn ai_test_supervisor_leaves_restarted_layer(
+    mut layer: LayerManager,
+) -> Result<()> {
+    let mut other = LayerManager::new();
+    layer.hold()?;
+    other.hold()?;
+    let pid = layer_pid(&layer).expect("layer should be running");
+    let other_pid = layer_pid(&other).expect("other layer should be running");
+    let pid_file = pid_file(&layer)?;
+    let lock_file = format!("{}.lock", layer.dir()?.display());
+
+    // Hold the layer lock so the supervisor waits to clean up, as it would
+    // while another devlayer restarts the layer
+    let lock = Flock::lock(File::open(&lock_file)?, FlockArg::LockExclusive)
+        .map_err(|(_, e)| e)?;
+    Command::new("sudo")
+        .args(["kill", "-KILL", &pid.to_string()])
+        .status()?;
+    assert!(wait_until(Duration::from_secs(5), || {
+        !PathBuf::from(format!("/proc/{}", pid)).exists()
+    }));
+    // Restarting writes the new PID 1 to the pid file, a running layer's
+    // PID 1 stands in for it
+    Command::new("sudo")
+        .args([
+            "sh",
+            "-c",
+            &format!("printf %s {} > {}", other_pid, pid_file.display()),
+        ])
+        .status()?;
+    drop(lock);
+
+    std::thread::sleep(Duration::from_secs(2));
+    assert!(has_mounts(&layer)?);
+    assert_eq!(
+        std::fs::read_to_string(&pid_file)?.trim(),
+        other_pid.to_string()
+    );
+
+    // Don't let stopping this layer stop the other one
+    Command::new("sudo")
+        .args(["rm", &pid_file.to_string_lossy()])
+        .status()?;
     Ok(())
 }
