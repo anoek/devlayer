@@ -63,7 +63,7 @@ fn ppid_of(pid: i32) -> Result<i32> {
 fn ai_test_supervisor_cleans_up_after_pid1_exit(
     mut layer: LayerManager,
 ) -> Result<()> {
-    layer.run(&["true"])?;
+    layer.hold()?;
     let pid = layer_pid(&layer).expect("layer should be running");
     assert!(has_mounts(&layer)?);
     Command::new("sudo")
@@ -83,7 +83,7 @@ fn ai_test_supervisor_cleans_up_after_pid1_exit(
 fn ai_test_supervisor_not_killable_by_user(
     mut layer: LayerManager,
 ) -> Result<()> {
-    layer.run(&["true"])?;
+    layer.hold()?;
     let pid = layer_pid(&layer).expect("layer should be running");
     let ppid = ppid_of(pid)?;
     let comm = std::fs::read_to_string(format!("/proc/{}/comm", ppid))?;
@@ -104,7 +104,7 @@ fn ai_test_supervisor_after_stop_and_delete(
 ) -> Result<()> {
     layer.run(&["true"])?;
     layer.run(&["stop"])?;
-    layer.run(&["true"])?;
+    layer.hold()?;
     assert!(layer_pid(&layer).is_some());
     let lock = PathBuf::from(format!("{}.lock", layer.dir()?.display()));
     layer.run(&["delete", "-y"])?;
@@ -112,5 +112,77 @@ fn ai_test_supervisor_after_stop_and_delete(
     assert!(!lock.exists());
     layer.run(&["list"])?;
     assert!(!layer.last_stdout.contains(&layer.name));
+    Ok(())
+}
+
+/// Once its command exits, a layer shuts itself down, keeping its changes,
+/// and running a command in it again restarts it
+#[rstest]
+fn ai_test_idle_layer_shuts_down(mut layer: LayerManager) -> Result<()> {
+    let name = format!("devlayer-coverage-idle-{}", rid());
+    let file = std::env::current_dir()?.join(&name);
+    layer.run(&["touch", file.to_str().unwrap_or_default()])?;
+    assert!(wait_until(Duration::from_secs(5), || {
+        !pid_file(&layer).unwrap().exists()
+    }));
+    assert!(!has_mounts(&layer)?);
+    assert!(!file.exists());
+
+    layer.run(&["list"])?;
+    let stopped = layer.last_stdout.split("Stopped layers:").nth(1);
+    assert!(stopped.is_some_and(|stopped| stopped.contains(&layer.name)));
+
+    layer.run(&["status", "/"])?;
+    assert!(layer.last_stdout.contains(&name));
+
+    layer.hold()?;
+    assert!(layer_pid(&layer).is_some());
+    Ok(())
+}
+
+/// A process left running in a layer keeps it up until the process exits
+#[rstest]
+fn ai_test_background_process_keeps_layer_up(
+    mut layer: LayerManager,
+) -> Result<()> {
+    layer.hold()?;
+    std::thread::sleep(Duration::from_secs(3));
+    assert!(layer_pid(&layer).is_some());
+    layer.run(&["pkill", "-f", "sleep 3600"])?;
+    assert!(wait_until(Duration::from_secs(5), || {
+        !pid_file(&layer).unwrap().exists()
+    }));
+    Ok(())
+}
+
+/// Processes orphaned inside a layer are reaped rather than left as zombies
+#[rstest]
+fn ai_test_orphans_reaped(mut layer: LayerManager) -> Result<()> {
+    layer.hold()?;
+    // The subshell exits right away, orphaning a short-lived child
+    layer.run(&["sh", "-c", "(sleep 0.2 &)"])?;
+    std::thread::sleep(Duration::from_secs(2));
+    layer.run(&[
+        "sh",
+        "-c",
+        "grep -l '^State:.*Z' /proc/[0-9]*/status || true",
+    ])?;
+    assert_eq!(layer.last_stdout.trim(), "");
+    Ok(())
+}
+
+/// A layer with resource limits removes its cgroup when it shuts down
+#[rstest]
+fn ai_test_idle_shutdown_removes_cgroup(mut layer: LayerManager) -> Result<()> {
+    // Resource limits aren't available everywhere, e.g. inside another layer
+    if !layer.pass(&["--cpus=1", "true"]) {
+        return Ok(());
+    }
+    let cgroup = PathBuf::from("/sys/fs/cgroup/devlayer").join(format!(
+        "{}-{}",
+        nix::unistd::getuid(),
+        layer.name
+    ));
+    assert!(wait_until(Duration::from_secs(5), || !cgroup.exists()));
     Ok(())
 }

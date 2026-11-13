@@ -196,7 +196,12 @@ fn test_delete_modified_layer_n() -> Result<()> {
     let filename = layer.test_filename("test_file");
 
     // Create and run a layer
-    layer.run(&["touch", &filename])?;
+    // Leave a process running so the layer stays up
+    layer.run(&[
+        "sh",
+        "-c",
+        &format!("touch {} && (sleep 3600 >/dev/null 2>&1 &)", filename),
+    ])?;
 
     // Delete the stopped layer
     layer.run_with_stdin(&["delete", &name], "n\n")?;
@@ -216,7 +221,12 @@ fn test_delete_modified_ignored_layer_n() -> Result<()> {
     let filename = layer.test_filename("test_file");
 
     // Create and run a layer
-    layer.run(&["touch", &filename])?;
+    // Leave a process running so the layer stays up
+    layer.run(&[
+        "sh",
+        "-c",
+        &format!("touch {} && (sleep 3600 >/dev/null 2>&1 &)", filename),
+    ])?;
 
     // Delete the stopped layer
     layer.set_ignored(false);

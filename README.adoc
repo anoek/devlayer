@@ -151,7 +151,9 @@ change in the layer. Relative patterns are relative to your current directory.
 Synchronize changes that might have occurred in your host file system so that they are reflected in running layers. Note, this performs a system wide filesystem sync and flushes all caches.
 
 `stop [--all]`::
-Kill all processes in the layer and unmount the filesystems. Note this will not reject any changes
+Kill all processes in the layer and unmount the filesystems. Note this will not reject any changes.
+A layer also stops by itself once nothing is running in it any more; `stop`
+is for stopping it right away, along with anything still running in it.
 
 `delete [PATTERNS]`::
 Stop and delete all files associated with the layers matching the provided patterns. If no patterns are provided, deletes the default or --join'ed layer.
@@ -299,6 +301,12 @@ Print version
 The CLI argument parser will treat anything after the `[OPTIONS]` as either an
 action (listed above), or a command to run in the layer. Running a command
 will implicitly start the layer if it isn't running already. 
+
+A layer keeps running for as long as anything is running in it, including
+processes left running in the background. About a second after the last
+process in it exits, the layer stops by itself: its filesystems are unmounted,
+but its changes are kept, so you can still `status`, `diff`, `accept` or
+`reject` them, and running another command in the layer starts it again.
 
 
 After the `[OPTIONS]`, provided you're not running an action, `devlayer` 

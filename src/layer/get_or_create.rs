@@ -22,7 +22,7 @@ use nix::{
     mount::MsFlags,
     mount::{MntFlags, umount2},
     sys::stat::{Mode, SFlag, makedev, mknod},
-    sys::wait::waitpid,
+    sys::wait::{WaitPidFlag, WaitStatus, waitpid},
     unistd::{
         ForkResult, Gid, Pid, Uid, close, fork, pipe, pivot_root, setsid,
     },
@@ -384,11 +384,7 @@ impl Layer {
 
             // Normal operation is that this doesn't return.
             let _ = self
-                .setup_layer_and_sleep_forever(
-                    config,
-                    &write_fd,
-                    overlay_mounts,
-                )
+                .setup_layer_and_wait(config, &write_fd, overlay_mounts)
                 .map_err(|e| {
                     error!("Failed to setup layer: {}", e);
                     e
@@ -402,7 +398,7 @@ impl Layer {
 
     /* After forking via clone3, this is function gets called to finish setting up the layer.
      * namespaces. It should never return, if it does it's an error. */
-    fn setup_layer_and_sleep_forever(
+    fn setup_layer_and_wait(
         &self,
         config: &Config,
         write_fd: &OwnedFd,
@@ -1121,30 +1117,63 @@ impl Layer {
             libc::signal(libc::SIGTERM, exit as libc::sighandler_t);
         }
 
-        // sleep forever, this process hangs around only to host the namespaces so other processes
-        // can join in.
-        let mut count = 0;
-        loop {
-            std::thread::sleep(std::time::Duration::from_millis(count));
-            /* Cheap hack to fill out coverage */
-            count += 1;
-            if count >= 2 {
-                count += 10000;
-                // Flush gcov coverage data before we spin forever
-                #[cfg(feature = "coverage")]
-                {
-                    let _ = nix::unistd::chdir(&cwd);
-
-                    unsafe {
-                        __llvm_profile_set_filename(
-                            CString::new(format!("coverage/profraw/setup_layer-{}-{}-%m.profraw", self.pid, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()).as_str(),)
+        /* Host the namespaces for as long as anything runs in the layer.
+         * Once a second, reap processes orphaned in the layer, and exit once
+         * we're the only process left, which has our supervisor clean up. */
+        /* Write our coverage data now, as we may be killed rather than exit */
+        #[cfg(feature = "coverage")]
+        let dump_coverage = || {
+            let _ = nix::unistd::chdir(&cwd);
+            unsafe {
+                __llvm_profile_set_filename(
+                    CString::new(
+                        format!(
+                            "coverage/profraw/setup_layer-{}-{}-%m.profraw",
+                            self.pid,
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
                                 .unwrap()
-                                .as_ptr(),
-                        );
-                        __llvm_profile_dump();
-                    }
-                }
+                                .as_secs()
+                        )
+                        .as_str(),
+                    )
+                    .unwrap()
+                    .as_ptr(),
+                );
+                __llvm_profile_dump();
+            }
+        };
+        #[cfg(feature = "coverage")]
+        dump_coverage();
+
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            while !matches!(
+                waitpid(Pid::from_raw(-1), Some(WaitPidFlag::WNOHANG)),
+                Ok(WaitStatus::StillAlive) | Err(_)
+            ) {}
+
+            if only_process_in_layer() {
+                trace!("Nothing is running in layer '{}', exiting", self.name);
+                #[cfg(feature = "coverage")]
+                dump_coverage();
+                std::process::exit(0);
             }
         }
     }
+}
+
+/// Whether we (PID 1) are the only process in our pid namespace, going by
+/// our layer's /proc
+fn only_process_in_layer() -> bool {
+    std::fs::read_dir("/proc").is_ok_and(|entries| {
+        entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name())
+            .filter(|name| {
+                name.to_str()
+                    .is_some_and(|n| n.bytes().all(|b| b.is_ascii_digit()))
+            })
+            .all(|name| name == "1")
+    })
 }

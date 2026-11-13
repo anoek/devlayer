@@ -23,10 +23,11 @@ fn write_config(
 }
 
 /// Starts the layer with a CPU limit to find out if this machine lets us
-/// manage cgroups. When it doesn't, e.g. because we're running inside a
-/// container or another layer, we check that we fail with a helpful error.
+/// manage cgroups, leaving it running. When it doesn't, e.g. because we're
+/// running inside a container or another layer, we check that we fail with a
+/// helpful error.
 fn limits_available(layer: &mut LayerManager) -> bool {
-    if layer.pass(&["--cpus=1", "true"]) {
+    if layer.hold_with(&["--cpus=1"]).is_ok() {
         return true;
     }
     assert!(
@@ -218,6 +219,7 @@ fn ai_test_limits_applied(mut layer: LayerManager) -> Result<()> {
     assert_eq!(run(&mut layer, &["cat", "/proc/self/cgroup"])?, "0::/");
 
     // Processes that join the running layer are in its cgroup too
+    layer.hold_with(&args)?;
     let cgroup = host_cgroup(&layer).expect("layer cgroup should exist");
     let mut child =
         layer.run_in_background(&[args[0], args[1], "sleep", "30"])?;
@@ -296,7 +298,7 @@ fn ai_test_limits_changed(mut layer: LayerManager) -> Result<()> {
 
     // Restart without config files, which may set limits of their own
     layer.run(&["stop"])?;
-    layer.run(&["--no-config", "--cpus=1", "true"])?;
+    layer.hold_with(&["--no-config", "--cpus=1"])?;
 
     // The layer is running with --cpus=1, so other limits are rejected
     assert!(layer.xfail(&["--no-config", "true"]));
@@ -332,13 +334,21 @@ fn ai_test_limits_stale_cgroup(mut layer: LayerManager) -> Result<()> {
         return Ok(());
     }
 
-    // Kill the layer without cleaning up, leaving an empty cgroup behind
+    // Kill the layer and its supervisor without cleaning up, leaving an
+    // empty cgroup behind
     let cgroup = host_cgroup(&layer).expect("layer cgroup should exist");
     layer.run(&["config", "layer_dir"])?;
     let pid_file = format!("{}.pid", layer.last_stdout.trim());
     let pid = fs::read_to_string(&pid_file)?;
+    let status = fs::read_to_string(format!("/proc/{}/status", pid.trim()))?;
+    let supervisor = status
+        .lines()
+        .find_map(|line| line.strip_prefix("PPid:"))
+        .unwrap_or_default()
+        .trim()
+        .to_string();
     std::process::Command::new("sudo")
-        .args(["kill", "-9", pid.trim()])
+        .args(["kill", "-9", &supervisor, pid.trim()])
         .status()?;
     for _ in 0..100 {
         if fs::read_to_string(cgroup.join("cgroup.procs"))?.is_empty() {

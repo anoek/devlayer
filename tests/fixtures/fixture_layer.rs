@@ -359,6 +359,23 @@ impl LayerManager {
         }
     }
 
+    /// Leaves a process running in the layer so it doesn't shut itself down
+    /// once a command finishes. The layer then stays up until it's stopped.
+    #[allow(dead_code)]
+    pub fn hold(&mut self) -> Result<()> {
+        self.hold_with(&[])
+    }
+
+    /// Like `hold`, passing these options to devlayer, e.g. the resource
+    /// limits a layer was started with, which joining it requires
+    #[allow(dead_code)]
+    pub fn hold_with(&mut self, options: &[&str]) -> Result<()> {
+        let mut args = options.to_vec();
+        args.extend(["sh", "-c", "sleep 3600 >/dev/null 2>&1 &"]);
+        self.run(&args)?;
+        Ok(())
+    }
+
     #[allow(dead_code)]
     pub fn run_in_background(&mut self, args: &[&str]) -> Result<Child> {
         let mut cmd = Command::new("sudo");
