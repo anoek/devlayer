@@ -90,7 +90,7 @@ Try that trendy web based install script in a layer first
 
 Let AIs run wild in YOLO mode without too much risk
 ```
- devlayer --net=host aider
+ devlayer aider
 ```
 
 Check what files were modified
@@ -167,9 +167,10 @@ the last layer you were working in. Cannot be used with --join or --new.
 Base storage directory for all layers. Defaults to `~/.devlayer/`
 
 `--net[=host|none]`::
-Sets network access level. With no parameter this enables host networking. The
-default value is `none`, which disables network access. If you want to enable
-network access by default you can store net="host" in a config file.
+Sets network access level. The default is `host`, which shares your host
+network. Use `--net=none` (or `net="none"` in a config file) to disable network
+access. With host networking the D-Bus and systemd sockets are also bound into
+the layer by default; `--no-default-binds` turns them off.
 
 `--bind[=<MOUNTS>]`::
 Specify directories or files to bind into the layer bypassing the layer

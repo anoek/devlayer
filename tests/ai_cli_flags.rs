@@ -180,11 +180,11 @@ fn test_no_config_flag_positioning(mut layer: LayerManager) -> Result<()> {
 
     // Test --no-config flag in different positions
     assert!(layer.pass(&["--no-config", "config"]));
-    // Should show defaults when no config is loaded
-    assert!(layer.last_stdout.contains("net=none"));
+    // Should show defaults (host network) when no config is loaded
+    assert!(layer.last_stdout.contains("net=host"));
 
     assert!(layer.pass(&["config", "--no-config"]));
-    assert!(layer.last_stdout.contains("net=none"));
+    assert!(layer.last_stdout.contains("net=host"));
 
     // Test with other flags
     assert!(layer.pass(&["--no-config", "--net=host", "config"]));

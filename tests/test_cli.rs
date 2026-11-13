@@ -32,8 +32,8 @@ fn test_cli(mut layer: LayerManager) -> Result<()> {
     // default values check
     layer.no_default_options = true;
     assert!(layer.pass(&["--no-config", "config"]));
-    assert!(layer.last_stdout.contains("name=layer"));
-    assert!(layer.last_stdout.contains("net=none"));
+    assert!(layer.last_stdout.contains("name=devlayer"));
+    assert!(layer.last_stdout.contains("net=host"));
 
     // Test config_files display
     assert!(layer.pass(&["--no-config", "config", "config_files"]));

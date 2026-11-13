@@ -39,8 +39,8 @@ pub struct Args {
     #[arg(long, global = true)]
     pub storage_dir: Option<String>,
 
-    /// Enable host (or other) network. Defaults to `none`, which disables network access. If you
-    /// want to enable network access by default you can store net="host" in a config file.
+    /// Set network access. Defaults to `host`. Use `--net=none` (or net="none" in a config
+    /// file) to disable network access.
     #[arg(
         long,
         global = true,

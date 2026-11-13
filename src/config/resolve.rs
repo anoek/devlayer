@@ -266,7 +266,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("name".into(), "default".into());
     }
 
-    let net = partial_config.net.unwrap_or(Network::None);
+    let net = partial_config.net.unwrap_or(Network::Host);
     if !sources.contains_key("net") {
         sources.insert("net".into(), "default".into());
     }
