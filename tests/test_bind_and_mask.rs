@@ -92,7 +92,7 @@ fn test_mask_env(mut sandbox: SandboxManager) -> Result<()> {
     std::fs::write(&test_file, "test")?;
     sandbox.run_with_env(
         &["--no-config", "ls", "-l", &test_dir],
-        "SANDBOX_MASK",
+        "DEVLAYER_MASK",
         &test_dir,
     )?;
     println!("{}", sandbox.last_stdout);
@@ -108,7 +108,7 @@ fn test_mask_empty_env(mut sandbox: SandboxManager) -> Result<()> {
     std::fs::write(&test_file, "test")?;
     sandbox.run_with_env(
         &["--no-config", "ls", "-l", &test_dir],
-        "SANDBOX_MASK",
+        "DEVLAYER_MASK",
         "",
     )?;
     println!("{}", sandbox.last_stdout);
@@ -124,7 +124,7 @@ fn test_mask_bind_mask(mut sandbox: SandboxManager) -> Result<()> {
     std::fs::write(&test_file, "test")?;
     sandbox.run_with_env(
         &["ls", "-l", &test_dir],
-        "SANDBOX_BIND",
+        "DEVLAYER_BIND",
         &format!("{}:{}:mask", test_dir, test_dir),
     )?;
     println!("{}", sandbox.last_stdout);
@@ -140,7 +140,7 @@ fn test_mask_file(mut sandbox: SandboxManager) -> Result<()> {
     std::fs::write(&test_file, "test")?;
     sandbox.run_with_env(
         &["cat", &test_file],
-        "SANDBOX_BIND",
+        "DEVLAYER_BIND",
         &format!("{}:{}:mask", test_file, test_file),
     )?;
     // file exists but is masked so won't contain the test we wrote
@@ -148,7 +148,7 @@ fn test_mask_file(mut sandbox: SandboxManager) -> Result<()> {
 
     sandbox.run_with_env(
         &["ls", &test_file],
-        "SANDBOX_BIND",
+        "DEVLAYER_BIND",
         &format!("{}:{}:mask", test_file, test_file),
     )?;
     println!("{}", sandbox.last_stdout);
@@ -162,7 +162,7 @@ fn test_mask_file(mut sandbox: SandboxManager) -> Result<()> {
 fn test_mask_combined(mut sandbox: SandboxManager) -> Result<()> {
     sandbox.run_with_env(
         &["--mask", "/tmp", "config"],
-        "SANDBOX_MASK",
+        "DEVLAYER_MASK",
         "/run",
     )?;
     assert!(sandbox.last_stdout.contains("/tmp"));

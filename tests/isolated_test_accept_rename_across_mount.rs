@@ -18,7 +18,7 @@ use std::{path::Path, process::Command};
 
 #[rstest]
 fn test_accept_rename_across_mount(mut sandbox: SandboxManager) -> Result<()> {
-    let dest_host_dir = "/delete-me-this-is-a-sandbox-coverage-test-dir-for-rename-across-mount";
+    let dest_host_dir = "/delete-me-this-is-a-devlayer-coverage-test-dir-for-rename-across-mount";
     let dir_to_move = sandbox.test_filename("dir_to_move");
     Command::new("sudo")
         .arg("mkdir")

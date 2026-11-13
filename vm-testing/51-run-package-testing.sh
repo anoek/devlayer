@@ -56,22 +56,22 @@ function wait_for_vm_to_boot() {
 # jump through to get the rpm installed that I haven't figured out yet.
 ###
 # run_command fedora-package-test dnf '"-y", "install", "'$RPM_FILE'"'
-# run_command fedora-package-test sandbox '"echo", "hello world"'
+# run_command fedora-package-test devlayer '"echo", "hello world"'
 
 # run_command rocky-package-test rpm '"-i", "'$RPM_FILE'"'
-# run_command rocky-package-test sandbox '"echo", "hello world"'
+# run_command rocky-package-test devlayer '"echo", "hello world"'
 
 wait_for_vm_to_boot arch-package-test
 run_command arch-package-test pacman '"-U", "--noconfirm", "'$PACMAN_FILE'"'
-run_command arch-package-test sandbox '"echo", "hello world"'
+run_command arch-package-test devlayer '"echo", "hello world"'
 
 wait_for_vm_to_boot debian-package-test
 run_command debian-package-test dpkg '"-i", "'$DEB_FILE'"'
-run_command debian-package-test sandbox '"echo", "hello world"'
+run_command debian-package-test devlayer '"echo", "hello world"'
 
 wait_for_vm_to_boot ubuntu-package-test
 run_command ubuntu-package-test dpkg '"-i", "'$DEB_FILE'"'
-run_command ubuntu-package-test sandbox '"echo", "hello world"'
+run_command ubuntu-package-test devlayer '"echo", "hello world"'
 
 
 

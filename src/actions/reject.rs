@@ -12,7 +12,7 @@ pub fn reject(
     sandbox: &Sandbox,
     patterns: &[String],
 ) -> Result<()> {
-    trace!("Rejecting changes from sandbox {}", sandbox.name);
+    trace!("Rejecting changes from layer {}", sandbox.name);
 
     let cwd = std::env::current_dir()?;
     let changes = sandbox.changes(config)?;

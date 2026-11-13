@@ -39,7 +39,7 @@ jobs:
             # 96.0 as opposed to 100% because on github and within our full-test
             # ubuntu vm we seem to be unable to get some profraw data for the
             # code that writes the llvm profile dump data at the end of setting
-            # up a sandbox (but the code is definitely run), as well as a
+            # up a layer (but the code is definitely run), as well as a
             # pre-kill signal handling bit of code in exec, that is also
             # definitely run, but the output is not captured.
             #

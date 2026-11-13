@@ -6,14 +6,14 @@ use log::{debug, trace};
 
 impl Sandbox {
     pub fn delete(&self) -> Result<()> {
-        self.stop().context("failed to stop sandbox")?;
-        self.unmount().context("failed to unmount sandbox")?;
+        self.stop().context("failed to stop layer")?;
+        self.unmount().context("failed to unmount layer")?;
 
-        trace!("Removing sandbox directory: {}", self.base.display());
+        trace!("Removing layer directory: {}", self.base.display());
         if self.base.exists() {
             rmdir_recursive(&self.base)?;
         } else {
-            debug!("Sandbox directory does not exist: {}", self.base.display());
+            debug!("Layer directory does not exist: {}", self.base.display());
         }
 
         let lock_file = PathBuf::from(format!("{}.lock", self.base.display()));

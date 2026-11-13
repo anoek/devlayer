@@ -67,27 +67,27 @@ fn ai_test_audio_flag(mut sandbox: SandboxManager) -> Result<()> {
 fn ai_test_audio_env(mut sandbox: SandboxManager) -> Result<()> {
     sandbox.run_with_env(
         &["--no-config", "config", "audio"],
-        "SANDBOX_AUDIO",
+        "DEVLAYER_AUDIO",
         "true",
     )?;
     assert_eq!(sandbox.last_stdout.trim(), "true");
 
     sandbox.run_with_env(
         &["--no-config", "config", "audio"],
-        "SANDBOX_AUDIO",
+        "DEVLAYER_AUDIO",
         "false",
     )?;
     assert_eq!(sandbox.last_stdout.trim(), "false");
 
     assert!(sandbox.exfail(
         &["--no-config", "config", "audio"],
-        "SANDBOX_AUDIO",
+        "DEVLAYER_AUDIO",
         "yes"
     ));
     assert!(
         sandbox
             .last_stderr
-            .contains("Invalid value for SANDBOX_AUDIO")
+            .contains("Invalid value for DEVLAYER_AUDIO")
     );
 
     Ok(())
@@ -103,7 +103,7 @@ fn ai_test_audio_config_file(mut sandbox: SandboxManager) -> Result<()> {
     // The environment takes precedence over config files
     sandbox.run_with_env(
         &["--config", &config, "config", "audio"],
-        "SANDBOX_AUDIO",
+        "DEVLAYER_AUDIO",
         "false",
     )?;
     assert_eq!(sandbox.last_stdout.trim(), "false");

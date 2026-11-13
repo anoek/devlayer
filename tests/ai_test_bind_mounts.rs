@@ -67,7 +67,7 @@ fn test_bind_mount_env(mut sandbox: SandboxManager) -> Result<()> {
     // Test environment variable using run_with_env
     sandbox.run_with_env(
         &["config"],
-        "SANDBOX_BIND",
+        "DEVLAYER_BIND",
         &format!("{},{}", test1, test2),
     )?;
     assert!(sandbox.last_stdout.contains(&test1));
@@ -76,7 +76,7 @@ fn test_bind_mount_env(mut sandbox: SandboxManager) -> Result<()> {
     // Test environment variable with source:target format
     sandbox.run_with_env(
         &["config"],
-        "SANDBOX_BIND",
+        "DEVLAYER_BIND",
         &format!("{}:{}", test1, mapped1),
     )?;
     assert!(
@@ -131,7 +131,7 @@ fn test_no_default_binds_env(mut sandbox: SandboxManager) -> Result<()> {
     // Test that no default binds works via environment variable
     sandbox.run_with_env(
         &["--no-config", "config"],
-        "SANDBOX_NO_DEFAULT_BINDS",
+        "DEVLAYER_NO_DEFAULT_BINDS",
         "true",
     )?;
     assert!(sandbox.last_stdout.contains("bind=\n"));
@@ -139,7 +139,7 @@ fn test_no_default_binds_env(mut sandbox: SandboxManager) -> Result<()> {
     // Test that custom binds still work with the env variable
     sandbox.run_with_env(
         &["--bind", &test1, "--no-config", "config"],
-        "SANDBOX_NO_DEFAULT_BINDS",
+        "DEVLAYER_NO_DEFAULT_BINDS",
         "true",
     )?;
     assert!(sandbox.last_stdout.contains(&test1));
@@ -148,7 +148,7 @@ fn test_no_default_binds_env(mut sandbox: SandboxManager) -> Result<()> {
     // Test that SANDBOX_NO_DEFAULT_BINDS=false (or any other value) doesn't disable defaults
     sandbox.run_with_env(
         &["--no-config", "config"],
-        "SANDBOX_NO_DEFAULT_BINDS",
+        "DEVLAYER_NO_DEFAULT_BINDS",
         "false",
     )?;
     assert!(sandbox.last_stdout.contains("/dev/fuse"));
@@ -163,7 +163,7 @@ fn test_bind_mount_env_parsing() -> Result<()> {
     // Test empty env var
     sandbox.run_with_env(
         &["--no-default-binds", "--no-config", "config"],
-        "SANDBOX_BIND",
+        "DEVLAYER_BIND",
         "",
     )?;
 
@@ -180,7 +180,7 @@ fn test_bind_mount_env_parsing() -> Result<()> {
 
     sandbox.run_with_env(
         &["--no-default-binds", "--no-config", "config"],
-        "SANDBOX_BIND",
+        "DEVLAYER_BIND",
         &format!("{},{},", test1, test2),
     )?;
 
@@ -191,7 +191,7 @@ fn test_bind_mount_env_parsing() -> Result<()> {
     // Test empty env var combined with CLI bind mount
     sandbox.run_with_env(
         &["--bind", &test1, "--no-config", "config"],
-        "SANDBOX_BIND",
+        "DEVLAYER_BIND",
         "",
     )?;
 
@@ -201,7 +201,7 @@ fn test_bind_mount_env_parsing() -> Result<()> {
     // Test whitespace-only env var
     sandbox.run_with_env(
         &["--no-default-binds", "--no-config", "config"],
-        "SANDBOX_BIND",
+        "DEVLAYER_BIND",
         "   ",
     )?;
 
@@ -227,7 +227,7 @@ fn test_bind_mount_env_with_options(mut sandbox: SandboxManager) -> Result<()> {
     // Test environment variable with read-only options
     sandbox.run_with_env(
         &["--no-default-binds", "config"],
-        "SANDBOX_BIND",
+        "DEVLAYER_BIND",
         &format!("{}::ro,{}::ro", test1, test2),
     )?;
 
@@ -238,7 +238,7 @@ fn test_bind_mount_env_with_options(mut sandbox: SandboxManager) -> Result<()> {
     // Test mixed read-only and read-write mounts
     sandbox.run_with_env(
         &["--no-default-binds", "config"],
-        "SANDBOX_BIND",
+        "DEVLAYER_BIND",
         &format!("{},{}", test3, test4),
     )?;
 
@@ -337,7 +337,7 @@ fn test_bind_mount_env_read_only() -> Result<()> {
             "touch",
             &format!("{}/new_file.txt", env_ro),
         ],
-        "SANDBOX_BIND",
+        "DEVLAYER_BIND",
         &format!("{}:{}:ro", test_dir_str, env_ro),
     );
 
@@ -365,7 +365,7 @@ fn test_bind_mount_env_read_only() -> Result<()> {
 
     sandbox.run_with_env(
         &["--no-config", "config"],
-        "SANDBOX_BIND",
+        "DEVLAYER_BIND",
         &format!("{},{}:{}:ro,{}::ro", test1, test2, mapped, test_dir_str),
     )?;
 
@@ -456,7 +456,7 @@ fn test_bind_mount_edge_cases() -> Result<()> {
 #[rstest]
 fn test_bind_mount_empty_destination() -> Result<()> {
     let mut sandbox = SandboxManager::new();
-    let test_name = format!("sandbox-bind-empty-dest-{}", sandbox.name);
+    let test_name = format!("devlayer-bind-empty-dest-{}", sandbox.name);
     let test_dir = sandbox.test_filename("bind_empty_dest");
     fs::create_dir_all(&test_dir)?;
     let tmp = format!("{}/tmp", test_dir);
@@ -482,7 +482,7 @@ fn test_bind_mount_empty_destination() -> Result<()> {
 #[rstest]
 fn test_bind_mount_empty_destination_with_sudo() -> Result<()> {
     // This test verifies empty destination bind mounts work correctly when sudo is involved
-    let unique_name = format!("sandbox-bind-empty-sudo-{}", rid());
+    let unique_name = format!("devlayer-bind-empty-sudo-{}", rid());
     let test_dir = format!("generated-test-data/{}", unique_name);
     fs::create_dir_all(&test_dir)?;
     let tmp = format!("{}/tmp", test_dir);
@@ -491,7 +491,7 @@ fn test_bind_mount_empty_destination_with_sudo() -> Result<()> {
     // Run directly with sudo to ensure proper handling of bind mount paths
     let output = std::process::Command::new("sudo")
         .arg("-E")
-        .arg(env!("CARGO_BIN_EXE_sandbox"))
+        .arg(env!("CARGO_BIN_EXE_devlayer"))
         .arg("--name")
         .arg(&unique_name)
         .arg("--bind")
@@ -520,7 +520,7 @@ fn test_empty_bind_array_in_config() -> Result<()> {
     fs::create_dir_all(&work_dir)?;
 
     // Write config file in the working directory
-    let config_file = format!("{}/.sandbox.toml", work_dir);
+    let config_file = format!("{}/.devlayer.toml", work_dir);
     fs::write(
         &config_file,
         r#"
@@ -552,7 +552,7 @@ fn test_all_deserialize_paths(mut sandbox: SandboxManager) -> Result<()> {
     use std::fs;
 
     let test_dir = sandbox.test_filename("test_all_deserialize_paths");
-    let config_dir = PathBuf::from(&test_dir).join(".config/sandbox");
+    let config_dir = PathBuf::from(&test_dir).join(".config/devlayer");
     fs::create_dir_all(&config_dir)?;
     let config_file = config_dir.join("config.toml");
 

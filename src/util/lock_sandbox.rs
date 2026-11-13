@@ -31,7 +31,7 @@ impl Lock {
             Ok(file) => file,
             Err(e) => {
                 return Err(anyhow!(
-                    "Failed to open lock file for sandbox {}: {}",
+                    "Failed to open lock file for layer {}: {}",
                     sandbox_name,
                     e
                 ));

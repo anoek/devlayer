@@ -74,7 +74,7 @@ pub fn main() -> Result<()> {
     let effective_uid = geteuid();
     if !effective_uid.is_root() {
         return Err(anyhow!(
-            "Insufficient permissions to create the sandbox, please retry using `sudo` or setuid flags"
+            "Insufficient permissions to create the layer, please retry using `sudo` or setuid flags"
         ));
     }
 
@@ -189,7 +189,7 @@ pub fn main() -> Result<()> {
 
     let sandbox =
         Sandbox::get_or_create(&config, uid_gid_home.uid, uid_gid_home.gid)
-            .context("Getting or creating sandbox")?;
+            .context("Getting or creating layer")?;
 
     // On success, we never actually return from this call
     sandbox.exec(&sandboxed_command)

@@ -69,7 +69,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
 
     // Check for mutually exclusive name options
     if (cli.new || cli.last)
-        && (partial_config.name.is_some() || env::var("SANDBOX_NAME").is_ok())
+        && (partial_config.name.is_some() || env::var("DEVLAYER_NAME").is_ok())
     {
         // If --new or --last is specified, name must not be provided via env or config
         return Err(anyhow::anyhow!(
@@ -78,7 +78,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     }
 
     // Override with environment variables if set
-    if let Ok(log_level) = env::var("SANDBOX_LOG_LEVEL") {
+    if let Ok(log_level) = env::var("DEVLAYER_LOG_LEVEL") {
         if let Ok(log_level) = log::LevelFilter::from_str(&log_level) {
             partial_config.log_level = Some(log_level);
             sources.insert("log_level".into(), "environment".into());
@@ -87,21 +87,21 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         }
     }
     if !cli.new && !cli.last {
-        if let Ok(name) = env::var("SANDBOX_NAME") {
+        if let Ok(name) = env::var("DEVLAYER_NAME") {
             if !name.is_empty() {
                 partial_config.name = Some(name);
                 sources.insert("name".into(), "environment".into());
             }
         }
     }
-    if let Ok(storage_dir) = env::var("SANDBOX_STORAGE_DIR") {
+    if let Ok(storage_dir) = env::var("DEVLAYER_STORAGE_DIR") {
         if !storage_dir.is_empty() {
             partial_config.storage_dir = Some(storage_dir);
             sources.insert("storage_dir".into(), "environment".into());
         }
     }
 
-    if let Ok(net) = env::var("SANDBOX_NET") {
+    if let Ok(net) = env::var("DEVLAYER_NET") {
         if !net.is_empty() {
             if let Ok(net) = Network::from_str(&net) {
                 partial_config.net = Some(net);
@@ -112,13 +112,13 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         }
     }
 
-    if let Ok(ignored_env) = env::var("SANDBOX_IGNORED") {
+    if let Ok(ignored_env) = env::var("DEVLAYER_IGNORED") {
         if let Ok(ignored_val) = bool::from_str(&ignored_env) {
             partial_config.ignored = Some(ignored_val);
             sources.insert("ignored".into(), "environment".into());
         } else {
             return Err(anyhow::anyhow!(
-                "Invalid value for SANDBOX_IGNORED: {}",
+                "Invalid value for DEVLAYER_IGNORED: {}",
                 ignored_env
             ));
         }
@@ -126,7 +126,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
 
     // Bind mounts and masks from environment variables form a single layer
     let mut env_bind_layer = vec![];
-    if let Ok(bind_mounts_env) = env::var("SANDBOX_BIND") {
+    if let Ok(bind_mounts_env) = env::var("DEVLAYER_BIND") {
         let env_bind_mounts: Vec<String> = bind_mounts_env
             .split(',')
             .map(|s| s.trim().to_string())
@@ -139,7 +139,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         }
     }
 
-    if let Ok(mask_paths_env) = env::var("SANDBOX_MASK") {
+    if let Ok(mask_paths_env) = env::var("DEVLAYER_MASK") {
         let env_mask_paths: Vec<String> = mask_paths_env
             .split(',')
             .map(|s| s.trim())
@@ -154,28 +154,28 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     }
     bind_layers.push(env_bind_layer);
 
-    if let Ok(no_default_binds_env) = env::var("SANDBOX_NO_DEFAULT_BINDS") {
+    if let Ok(no_default_binds_env) = env::var("DEVLAYER_NO_DEFAULT_BINDS") {
         let no_default_binds_val = bool::from_str(&no_default_binds_env)
-            .expect("Invalid value for SANDBOX_NO_DEFAULT_BINDS");
+            .expect("Invalid value for DEVLAYER_NO_DEFAULT_BINDS");
         partial_config.no_default_binds = Some(no_default_binds_val);
         sources.insert("no_default_binds".into(), "environment".into());
     }
 
-    if let Ok(audio_env) = env::var("SANDBOX_AUDIO") {
+    if let Ok(audio_env) = env::var("DEVLAYER_AUDIO") {
         if let Ok(audio_val) = bool::from_str(&audio_env) {
             partial_config.audio = Some(audio_val);
             sources.insert("audio".into(), "environment".into());
         } else {
             return Err(anyhow::anyhow!(
-                "Invalid value for SANDBOX_AUDIO: {}",
+                "Invalid value for DEVLAYER_AUDIO: {}",
                 audio_env
             ));
         }
     }
 
     for (var, key, field) in [
-        ("SANDBOX_CPUS", "cpus", &mut partial_config.cpus),
-        ("SANDBOX_MEMORY", "memory", &mut partial_config.memory),
+        ("DEVLAYER_CPUS", "cpus", &mut partial_config.cpus),
+        ("DEVLAYER_MEMORY", "memory", &mut partial_config.memory),
     ] {
         if let Some(value) = env::var(var).ok().filter(|v| !v.is_empty()) {
             *field = Some(value);
@@ -261,7 +261,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     bind_layers.push(cli_bind_layer);
 
     // If nothing else, fill in with some default values
-    let name = partial_config.name.unwrap_or("sandbox".to_string());
+    let name = partial_config.name.unwrap_or("devlayer".to_string());
     if !sources.contains_key("name") {
         sources.insert("name".into(), "default".into());
     }
@@ -404,7 +404,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     validate_config(&config)?;
 
     trace!("Storage dir: {:?}", config.storage_dir);
-    trace!("Sandbox: {:?}", config.name);
+    trace!("Layer: {:?}", config.name);
 
     Ok(config)
 }
@@ -518,8 +518,8 @@ pub fn resolve_sandbox_storage_dir(
         None => {
             let ugh = resolve_uid_gid_home()?;
             vec![
-                ugh.home.join(".sandboxes"),
-                PathBuf::from(format!("/tmp/sandboxes-{}", ugh.uid)),
+                ugh.home.join(".devlayer"),
+                PathBuf::from(format!("/tmp/devlayer-{}", ugh.uid)),
             ]
         }
     };
@@ -695,20 +695,20 @@ fn find_config_files() -> Result<Vec<PathBuf>> {
     // Any project specific files
     let mut current_dir = std::env::current_dir()?;
     loop {
-        paths_to_check.push(current_dir.join(".sandbox.conf"));
-        paths_to_check.push(current_dir.join(".sandbox.toml"));
+        paths_to_check.push(current_dir.join(".devlayer.conf"));
+        paths_to_check.push(current_dir.join(".devlayer.toml"));
         if current_dir == uid_gid_home.home || !current_dir.pop() {
             break;
         }
     }
 
     // ~/.config/sandbox/config.toml
-    paths_to_check.push(uid_gid_home.home.join(".config/sandbox/config.conf"));
-    paths_to_check.push(uid_gid_home.home.join(".config/sandbox/config.toml"));
+    paths_to_check.push(uid_gid_home.home.join(".config/devlayer/config.conf"));
+    paths_to_check.push(uid_gid_home.home.join(".config/devlayer/config.toml"));
 
     // /etc/sandbox.conf
-    paths_to_check.push(PathBuf::from("/etc/sandbox.conf"));
-    paths_to_check.push(PathBuf::from("/etc/sandbox.toml"));
+    paths_to_check.push(PathBuf::from("/etc/devlayer.conf"));
+    paths_to_check.push(PathBuf::from("/etc/devlayer.toml"));
 
     // Finally reverse them so we can process them in order nicely
     paths_to_check.reverse();
@@ -787,7 +787,7 @@ fn merge_configs(
 
 fn validate_config(config: &Config) -> Result<()> {
     if config.name.contains("/") {
-        return Err(anyhow::anyhow!("Invalid sandbox name: {}", config.name));
+        return Err(anyhow::anyhow!("Invalid layer name: {}", config.name));
     }
 
     Ok(())
@@ -851,7 +851,7 @@ fn find_last_sandbox(
         resolve_sandbox_storage_dir(storage_dir.clone(), uid, gid)?;
 
     let entries = std::fs::read_dir(&storage_dir).context(format!(
-        "Failed to read sandbox storage directory: {:?}",
+        "Failed to read layer storage directory: {:?}",
         storage_dir
     ))?;
 
@@ -872,7 +872,7 @@ fn find_last_sandbox(
             let created = metadata
                 .created()
                 .or_else(|_| metadata.modified())
-                .context("Failed to get creation time for sandbox")?;
+                .context("Failed to get creation time for layer")?;
             sandboxes.push((name, created));
         }
     }
@@ -885,7 +885,7 @@ fn find_last_sandbox(
     };
 
     if sandboxes.is_empty() {
-        return Err(anyhow::anyhow!("No sandboxes found"));
+        return Err(anyhow::anyhow!("No layers found"));
     }
 
     // Sort by creation time (newest first)
@@ -959,7 +959,7 @@ mod tests {
     #[test]
     fn test_validate_config() {
         let mut config = Config {
-            name: "test-sandbox".to_string(),
+            name: "test-layer".to_string(),
             storage_dir: PathBuf::from("/tmp/test"),
             sandbox_dir: PathBuf::from("/tmp/test"),
             upper_cwd: PathBuf::from("/tmp/test"),
@@ -976,13 +976,13 @@ mod tests {
             config_files: vec![],
         };
         assert!(validate_config(&config).is_ok());
-        config.name = "../test-sandbox".to_string();
+        config.name = "../test-layer".to_string();
         assert!(validate_config(&config).is_err());
-        config.name = "test-sandbox/".to_string();
+        config.name = "test-layer/".to_string();
         assert!(validate_config(&config).is_err());
-        config.name = "test-sandbox\\".to_string();
+        config.name = "test-layer\\".to_string();
         assert!(validate_config(&config).is_ok());
-        config.name = "test-sandbox.".to_string();
+        config.name = "test-layer.".to_string();
         assert!(validate_config(&config).is_ok());
         config.name = ".test".to_string();
         assert!(validate_config(&config).is_ok());
@@ -1038,7 +1038,7 @@ mod tests {
 
         let override_config = PartialConfig {
             log_level: Some(LevelFilter::Debug),
-            name: Some("test-sandbox".to_string()),
+            name: Some("test-layer".to_string()),
             storage_dir: Some("/tmp/test".to_string()),
             net: Some(Network::Host),
             ignored: Some(true),
@@ -1070,7 +1070,7 @@ mod tests {
 
         // Verify all fields were merged
         assert_eq!(base.log_level, Some(LevelFilter::Debug));
-        assert_eq!(base.name, Some("test-sandbox".to_string()));
+        assert_eq!(base.name, Some("test-layer".to_string()));
         assert_eq!(base.storage_dir, Some("/tmp/test".to_string()));
         assert!(matches!(base.net, Some(Network::Host)));
         assert_eq!(base.ignored, Some(true));

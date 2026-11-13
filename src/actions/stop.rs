@@ -13,7 +13,7 @@ pub fn stop(
     uid: Uid,
     gid: Gid,
 ) -> Result<()> {
-    trace!("Stopping sandbox {}", sandbox_name);
+    trace!("Stopping layer {}", sandbox_name);
     let (sandbox, _lock) =
         Sandbox::get(sandboxes_storage_dir, sandbox_name, uid, gid, None)?;
 
@@ -39,10 +39,7 @@ pub fn stop_all(
     gid: Gid,
     patterns: &[String],
 ) -> Result<()> {
-    trace!(
-        "Stopping all sandboxes in {}",
-        sandboxes_storage_dir.display()
-    );
+    trace!("Stopping all layers in {}", sandboxes_storage_dir.display());
 
     let sandboxes = sandboxes_storage_dir.read_dir()?;
     for sandbox in sandboxes {
@@ -87,7 +84,7 @@ pub fn stop_all(
                 match stop(sandboxes_storage_dir, &sandbox_name, uid, gid) {
                     Ok(_) => {}
                     Err(e) => {
-                        warn!("Failed to kill sandbox {}: {}", sandbox_name, e);
+                        warn!("Failed to kill layer {}: {}", sandbox_name, e);
                     }
                 }
             }

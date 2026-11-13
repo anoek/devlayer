@@ -12,8 +12,8 @@ fn test_new_last_mutual_exclusivity(mut sandbox: SandboxManager) -> Result<()> {
     assert!(sandbox.xfail(&["--name=foo", "--last", "ls"]));
     assert!(sandbox.xfail(&["--name=foo", "--new", "ls"]));
     assert!(sandbox.xfail(&["--name=foo", "--new", "--last", "ls"]));
-    assert!(sandbox.exfail(&["--new", "ls"], "SANDBOX_NAME", "foo"));
-    assert!(sandbox.exfail(&["--last", "ls"], "SANDBOX_NAME", "foo"));
+    assert!(sandbox.exfail(&["--new", "ls"], "DEVLAYER_NAME", "foo"));
+    assert!(sandbox.exfail(&["--last", "ls"], "DEVLAYER_NAME", "foo"));
 
     Ok(())
 }
@@ -27,7 +27,7 @@ fn test_last_is_empty(mut sandbox: SandboxManager) -> Result<()> {
         "TEST_LAST_IS_EMPTY",
         "1"
     ));
-    assert!(sandbox.last_stderr.contains("No sandboxes found"));
+    assert!(sandbox.last_stderr.contains("No layers found"));
 
     Ok(())
 }

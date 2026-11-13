@@ -10,7 +10,7 @@ use std::{process::Command, thread::sleep, time::Duration};
  * tests that were running in parallel. */
 
 #[rstest]
-#[ignore = "Problematic on dev machines with running sandboxes"]
+#[ignore = "Problematic on dev machines with running layers"]
 fn test_stop_all_partial_fail() -> Result<()> {
     let mut bad_sandbox = sandbox();
     bad_sandbox.run(&["true"])?;
@@ -26,7 +26,7 @@ fn test_stop_all_partial_fail() -> Result<()> {
     assert!(bad_sandbox.xfail(&["true"]));
     assert!(bad_sandbox.all_stderr.contains("Failed to open lock"));
 
-    /* Despite bad state that the above "sandbox" is in, the following is expected to work. */
+    /* Despite bad state that the above "devlayer" is in, the following is expected to work. */
     let mut sandbox1 = sandbox();
     let mut sandbox2 = sandbox();
     let mut c1 = sandbox1.run_in_background(&["sleep", "9897135"])?;

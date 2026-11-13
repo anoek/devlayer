@@ -91,7 +91,7 @@ impl Sandbox {
         let pid_fd = pidfd_open(self.pid, 0)?;
         if (unsafe { setns(pid_fd, ns_flags) }) != 0 {
             return Err(anyhow!(
-                "Failed to join sandbox namespaces: {}",
+                "Failed to join layer namespaces: {}",
                 nix::errno::Errno::last()
             ));
         }
@@ -113,9 +113,9 @@ impl Sandbox {
         ))?;
 
         unsafe {
-            std::env::set_var("SANDBOX", self.name.clone());
+            std::env::set_var("DEVLAYER", self.name.clone());
             std::env::set_var(
-                "SANDBOX_STORAGE_DIR",
+                "DEVLAYER_STORAGE_DIR",
                 self.data_storage_dir.clone(),
             );
         }

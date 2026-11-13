@@ -120,7 +120,7 @@ pub fn accept(
     sandbox: &Sandbox,
     patterns: &[String],
 ) -> Result<()> {
-    trace!("Accepting changes from sandbox {}", sandbox.name);
+    trace!("Accepting changes from layer {}", sandbox.name);
 
     let cwd = std::env::current_dir()?;
     let all_changes = sandbox.changes(config)?;

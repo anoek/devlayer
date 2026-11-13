@@ -12,7 +12,7 @@ fn ai_test_config_option() -> Result<()> {
     // This tests the CLI parsing functionality directly
 
     // Create test config files
-    let test_dir = std::env::temp_dir().join("sandbox_config_test");
+    let test_dir = std::env::temp_dir().join("layer_config_test");
     std::fs::create_dir_all(&test_dir)?;
 
     let config_file = test_dir.join("test.toml");

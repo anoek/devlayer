@@ -15,7 +15,7 @@ impl Sandbox {
         }
 
         if mounts.is_empty() {
-            debug!("No mounts found for sandbox '{}'", self.name);
+            debug!("No mounts found for layer '{}'", self.name);
         }
 
         for mount in mounts {

@@ -18,7 +18,7 @@ pub fn diff(
     sandbox: &Sandbox,
     patterns: &[String],
 ) -> Result<()> {
-    trace!("Diffing sandbox {}", sandbox.name);
+    trace!("Diffing layer {}", sandbox.name);
 
     if json {
         return Err(anyhow::anyhow!("JSON mode is not supported for diff"));

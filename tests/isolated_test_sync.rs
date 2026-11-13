@@ -18,14 +18,14 @@ fn test_sync(mut sandbox: SandboxManager) -> Result<()> {
     sandbox.run(&[
         "bash",
         "-c",
-        format!("echo -n 'from sandbox echo' > {}", t.as_str()).as_str(),
+        format!("echo -n 'from layer echo' > {}", t.as_str()).as_str(),
     ])?;
 
     std::fs::write(&t, "goodbye")?;
 
     sandbox.run(&["cat", t.clone().as_str()])?;
     let stdout = sandbox.last_stdout.trim();
-    assert_eq!(stdout, "from sandbox echo");
+    assert_eq!(stdout, "from layer echo");
 
     // remove the file from the upper directory
     std::fs::remove_file(upper_dir.join(&t)).context(format!(

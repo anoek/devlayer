@@ -40,7 +40,7 @@ fn test_valid_config_formats() -> Result<()> {
     // Create a local config file in test directory
     let test_dir = format!("generated-test-data/{}", sandbox.name);
     fs::create_dir_all(&test_dir)?;
-    let config_file = format!("{}/.sandbox.toml", test_dir);
+    let config_file = format!("{}/.devlayer.toml", test_dir);
 
     // Test valid configs - just verify they don't cause parse errors
     let bind_single = format!("{}/single", test_dir);
@@ -96,7 +96,7 @@ fn test_config_file_locations() -> Result<()> {
     // 1. .sandbox.toml in current directory
     let test_dir = format!("generated-test-data/{}", sandbox.name);
     fs::create_dir_all(&test_dir)?;
-    let local_config = format!("{}/.sandbox.toml", test_dir);
+    let local_config = format!("{}/.devlayer.toml", test_dir);
     fs::write(&local_config, r#"log_level = "TRACE""#)?;
 
     // Change to test directory and run config
@@ -106,7 +106,7 @@ fn test_config_file_locations() -> Result<()> {
     if sandbox.pass(&["config"]) {
         assert!(
             sandbox.last_stdout.contains("TRACE"),
-            "Should pick up local .sandbox.toml config"
+            "Should pick up local .devlayer.toml config"
         );
     }
 

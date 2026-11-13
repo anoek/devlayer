@@ -79,7 +79,7 @@ impl Sandbox {
         let lock = match lock {
             Some(l) => l,
             None => Lock::sandbox(sandboxes_storage_dir, sandbox_name)
-                .context(format!("failed to lock sandbox: {}", sandbox_name))?,
+                .context(format!("failed to lock layer: {}", sandbox_name))?,
         };
 
         let sandbox_base_dir = sandboxes_storage_dir.join(sandbox_name);
@@ -119,7 +119,7 @@ impl Sandbox {
 
         /* First lock so we don't have multiple processes trying to get_or_create at the same time */
         let lock = Lock::sandbox(storage_dir, sandbox_name)
-            .context(format!("failed to lock sandbox: {}", sandbox_name))?;
+            .context(format!("failed to lock layer: {}", sandbox_name))?;
 
         /* If we have an existing sandbox, return it */
         let (sandbox, _lock) =
@@ -154,7 +154,7 @@ impl Sandbox {
                     }
                     Err(e) => {
                         return Err(anyhow!(
-                            "Failed to load existing sandbox settings from {}: {}. The sandbox may be corrupted.",
+                            "Failed to load existing layer settings from {}: {}. The layer may be corrupted.",
                             settings_path.display(),
                             e
                         ));
@@ -171,7 +171,7 @@ impl Sandbox {
             Sandbox::from_location(storage_dir, sandbox_name, uid, gid);
 
         trace!(
-            "Creating new sandbox '{}': {}",
+            "Creating new layer '{}': {}",
             sandbox_name,
             sandbox.base.display()
         );
@@ -196,10 +196,10 @@ impl Sandbox {
          * so we fail before mounting anything if limits aren't available. */
         let cgroup = sandbox.create_cgroup_or_share_outer(&config)?;
 
-        trace!("Mounting sandbox");
+        trace!("Mounting layer");
         let started = sandbox
             .mount_overlays(&config)
-            .context(format!("failed to mount sandbox: {}", sandbox_name))
+            .context(format!("failed to mount layer: {}", sandbox_name))
             .and_then(|overlay_mounts| {
                 /* Create PID 1 for our sandbox */
                 sandbox
@@ -209,7 +209,7 @@ impl Sandbox {
                         &overlay_mounts,
                         cgroup.as_ref(),
                     )
-                    .map_err(|e| anyhow!("Failed to start sandbox: {}", e))
+                    .map_err(|e| anyhow!("Failed to start layer: {}", e))
             });
 
         sandbox.pid = match started {
@@ -239,7 +239,7 @@ impl Sandbox {
         // create a pipe between ourselves and the main sandbox process so the main sandbox process can
         // let us know when it's done setting up the namespaces
         let (read_fd, write_fd) =
-            pipe().context("failed to create pipe for sandbox")?;
+            pipe().context("failed to create pipe for layer")?;
 
         let clone_args = Clone3Args {
             flags: CLONE_NEWNS
@@ -270,8 +270,8 @@ impl Sandbox {
                 clone_args
             };
 
-        let pid = clone3(&clone_args)
-            .context("clone3 call to start sandbox failed")?;
+        let pid =
+            clone3(&clone_args).context("clone3 call to start layer failed")?;
 
         if pid.as_raw() > 0 {
             // We are the parent process
@@ -288,10 +288,10 @@ impl Sandbox {
             // our signal that the namespaces are ready for use.
             let mut buffer = [0; 1];
             nix::unistd::read(read_fd.as_raw_fd(), &mut buffer)
-                .context("failed to read from sandbox ready pipe")?;
+                .context("failed to read from layer ready pipe")?;
 
             if buffer[0] == 1 {
-                return Err(anyhow!("Failed to setup sandbox"));
+                return Err(anyhow!("Failed to setup layer"));
             }
 
             drop(read_fd);
@@ -312,13 +312,13 @@ impl Sandbox {
                     overlay_mounts,
                 )
                 .map_err(|e| {
-                    error!("Failed to setup sandbox: {}", e);
+                    error!("Failed to setup layer: {}", e);
                     e
                 });
 
             // If we're here, an error occurred and we'll exit
             nix::unistd::write(&write_fd, &[1])
-                .context("failed to write to sandbox ready pipe")?;
+                .context("failed to write to layer ready pipe")?;
 
             std::process::exit(1);
         }
@@ -332,7 +332,7 @@ impl Sandbox {
         write_fd: &OwnedFd,
         mounts: &Vec<MountHash>,
     ) -> Result<()> {
-        trace!("Setting up sandbox root process");
+        trace!("Setting up layer root process");
 
         /* Normalize credentials and dumpable state for pidfd-based setns().
          *
@@ -352,13 +352,13 @@ impl Sandbox {
             Uid::from_raw(0),
             Uid::from_raw(0),
         )
-        .context("failed to normalize sandbox PID 1 UIDs to root")?;
+        .context("failed to normalize layer PID 1 UIDs to root")?;
         nix::unistd::setresgid(
             Gid::from_raw(0),
             Gid::from_raw(0),
             Gid::from_raw(0),
         )
-        .context("failed to normalize sandbox PID 1 GIDs to root")?;
+        .context("failed to normalize layer PID 1 GIDs to root")?;
         unsafe {
             libc::prctl(libc::PR_SET_DUMPABLE, 1);
         }
@@ -1022,11 +1022,11 @@ impl Sandbox {
         // send a byte over the pipe to signal that the sandbox is initialized and
         // ready for use
         nix::unistd::write(write_fd, &[0])
-            .context(format!("failed to write to sandbox ready pipe"))?;
+            .context(format!("failed to write to layer ready pipe"))?;
         close(write_fd.as_raw_fd())
-            .context(format!("failed to close sandbox ready pipe"))?;
+            .context(format!("failed to close layer ready pipe"))?;
 
-        trace!("Sandbox setup complete");
+        trace!("Layer setup complete");
 
         /* Close all file descriptors so our test harness doesn't hang waiting for them to close
          * before returning a result. */

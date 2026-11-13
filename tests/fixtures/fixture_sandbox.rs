@@ -40,13 +40,13 @@ pub fn get_sandbox_bin() -> String {
 
     let bin = if let Ok(current_exe) = std::env::current_exe() {
         if current_exe.to_string_lossy().contains("/coverage/") {
-            "target/coverage/sandbox"
+            "target/coverage/devlayer"
         } else {
-            "target/debug/sandbox"
+            "target/debug/devlayer"
         }
     } else {
         // Fallback if we can't determine the path
-        "target/debug/sandbox"
+        "target/debug/devlayer"
     };
 
     let path = project_root.join(bin);
@@ -72,7 +72,7 @@ pub struct SandboxManager {
 
 impl SandboxManager {
     pub fn new() -> Self {
-        let name = format!("sandbox-coverage-test-{}", rid());
+        let name = format!("devlayer-coverage-test-{}", rid());
 
         #[allow(clippy::panic)]
         match std::fs::create_dir_all(
@@ -401,7 +401,7 @@ impl Drop for SandboxManager {
         self.ignored = true;
 
         if let Err(e) = self.run(&["stop"]) {
-            error!("Failed to kill sandbox: {}", e);
+            error!("Failed to kill layer: {}", e);
             error!("last_stderr: {}", self.last_stderr);
             error!("last_stdout: {}", self.last_stdout);
             return;
@@ -425,7 +425,7 @@ impl Drop for SandboxManager {
             match self.run(&["delete", "-y", sandbox_name.as_str()]) {
                 Ok(_) => (),
                 Err(e) => {
-                    warn!("Failed to delete sandbox: {}", e);
+                    warn!("Failed to delete layer: {}", e);
                     warn!("last_stderr: {}", self.last_stderr);
                     warn!("last_stdout: {}", self.last_stdout);
                 }

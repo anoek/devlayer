@@ -7,22 +7,22 @@ common_init
 
 
 reinitialize_fs mkfs.ext2
-do_test /home/sandbox/source
+do_test /home/devlayer/source
 
 reinitialize_fs mkfs.ext3
-do_test /home/sandbox/source
+do_test /home/devlayer/source
 
 reinitialize_fs mkfs.ext4
-do_test /home/sandbox/source
+do_test /home/devlayer/source
 
 reinitialize_as_nfs
-do_test /home/sandbox/source
+do_test /home/devlayer/source
 
 reinitialize_fs mkfs.btrfs
-do_test /home/sandbox/source
+do_test /home/devlayer/source
 
 reinitialize_fs mkfs.xfs
-do_test /home/sandbox/source
+do_test /home/devlayer/source
 
 
 

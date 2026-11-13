@@ -10,7 +10,7 @@ use std::{io::Write, process::Command, thread::sleep, time::Duration};
  * tests that were running in parallel. */
 
 #[rstest]
-#[ignore = "Ignoring as this will stop non test sandboxes"]
+#[ignore = "Ignoring as this will stop non test layers"]
 fn test_stop_all() -> Result<()> {
     let mut sandbox1 = sandbox();
     let mut sandbox2 = sandbox();
@@ -37,9 +37,7 @@ fn test_stop_all() -> Result<()> {
     }
 
     if !ok {
-        return Err(anyhow::anyhow!(
-            "Sandboxes did not start within 10 seconds"
-        ));
+        return Err(anyhow::anyhow!("Layers did not start within 10 seconds"));
     }
 
     // ensure they're actually there

@@ -1,7 +1,7 @@
 -s dir
---name sandbox
+--name devlayer
 --license mit
---description "Run commands in a sandboxed copy-on-write view of your computer"
+--description "Run commands in a copy-on-write layer over your computer"
 --url "https://github.com/anoek/sandbox"
 --maintainer "Akita Noek <akita@noek.net>"
 --deb-recommends diffutils

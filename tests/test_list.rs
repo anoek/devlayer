@@ -50,7 +50,7 @@ fn test_list_ignore_bad_pid_file(mut sandbox: SandboxManager) -> Result<()> {
     println!("t: {}", t.display());
     let bad_sandbox_base =
         format!("{}/{}", t.to_string_lossy(), "coverage_test_bad_pid_file");
-    println!("bad_sandbox_base: {}", bad_sandbox_base);
+    println!("bad_layer_base: {}", bad_sandbox_base);
 
     let pid_file_name = format!("{}.pid", bad_sandbox_base);
     let lock_file_name = format!("{}.lock", bad_sandbox_base);

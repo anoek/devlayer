@@ -9,10 +9,10 @@ impl Sandbox {
     pub fn stop(&self) -> Result<()> {
         let pid = self.pid;
         if pid == Pid::from_raw(-1) {
-            trace!("Sandbox '{}' doesn't appear to be running", self.name);
+            trace!("Layer '{}' doesn't appear to be running", self.name);
         } else {
             trace!(
-                "Stopping sandbox '{}' located in {} with pid {}",
+                "Stopping layer '{}' located in {} with pid {}",
                 self.name,
                 self.base.display(),
                 pid
@@ -34,18 +34,18 @@ impl Sandbox {
 
             // Get our sandbox namespaces
             let sandbox_ns_str = format!("/proc/{}/ns/pid_for_children", pid);
-            trace!("sandbox_ns_str: {}", sandbox_ns_str);
+            trace!("layer_ns_str: {}", sandbox_ns_str);
             let sandbox_ns_path = Path::new(&sandbox_ns_str);
-            trace!("sandbox_ns_path: {}", sandbox_ns_path.display());
+            trace!("layer_ns_path: {}", sandbox_ns_path.display());
 
             if !sandbox_ns_path.exists() {
-                trace!("Sandbox process {} already gone", pid);
+                trace!("Layer process {} already gone", pid);
             } else {
                 let ns = readlink(sandbox_ns_path).context(format!(
                     "failed to readlink {}",
                     sandbox_ns_path.display()
                 ))?;
-                trace!("sandbox_ns: {}", ns.to_string_lossy());
+                trace!("layer_ns: {}", ns.to_string_lossy());
 
                 // Collect each process that shares a namespace with our sandbox
                 for entry in std::fs::read_dir("/proc")
@@ -106,7 +106,7 @@ impl Sandbox {
                         trace!("command: {}", command);
 
                         trace!(
-                            "[{}] Killing {} in sandbox '{}'",
+                            "[{}] Killing {} in layer '{}'",
                             process_pid, command, self.name
                         );
 

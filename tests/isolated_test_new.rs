@@ -22,12 +22,12 @@ fn test_new_last_name_with_ms() -> Result<()> {
         assert!(sandbox.epass(
             &["--new", "-v", "true"],
             "TEST_NAME_WITH_MS",
-            "sandbox-coverage-new-with-ms"
+            "devlayer-coverage-new-with-ms"
         ));
         sandbox.run(&["--last", "config", "name"])?;
         sandbox.name = sandbox.last_stdout.trim().to_string();
 
-        println!("sandbox.name: {}", sandbox.name);
+        println!("layer.name: {}", sandbox.name);
     }
 
     Ok(())

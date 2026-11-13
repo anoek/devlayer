@@ -56,7 +56,7 @@ pub fn delete(
     patterns: &[String],
     force: bool,
 ) -> Result<()> {
-    trace!("Preparing to delete sandboxes");
+    trace!("Preparing to delete layers");
 
     let [running_sandboxes, stopped_sandboxes] = if patterns.is_empty() {
         if Sandbox::from_location(
@@ -109,11 +109,11 @@ pub fn delete(
     if stopped_sandboxes.is_empty() && running_sandboxes.is_empty() {
         if patterns.is_empty() {
             outln!(
-                "No sandbox by the name of '{}' found to delete.",
+                "No layer by the name of '{}' found to delete.",
                 config.name
             );
         } else {
-            outln!("No sandboxes found matching the specified patterns.");
+            outln!("No layers found matching the specified patterns.");
         }
         return Ok(());
     }
@@ -138,7 +138,7 @@ pub fn delete_sandboxes(
 ) -> Result<()> {
     // Show sandboxes that will be deleted and ask for confirmation
     if !force {
-        outln!("The following sandboxes will be deleted:");
+        outln!("The following layers will be deleted:");
         for (list, stopped) in
             [(running_sandboxes, false), (stopped_sandboxes, true)]
         {
@@ -174,7 +174,7 @@ pub fn delete_sandboxes(
         }
 
         // Use eprint! for the prompt since print! is not allowed
-        eprint!("\nAre you sure you want to delete these sandboxes? [y/N] ");
+        eprint!("\nAre you sure you want to delete these layers? [y/N] ");
         let _ = io::stderr().flush();
 
         let mut response = String::new();
@@ -200,22 +200,22 @@ pub fn delete_sandboxes(
                 stopped,
             )?;
 
-            trace!("Deleting sandbox: {}", sandbox_entry.name);
+            trace!("Deleting layer: {}", sandbox_entry.name);
             match sandbox_entry.sandbox.delete() {
                 Ok(()) => {
-                    outln!("Deleted sandbox: {}", sandbox_entry.name.green());
+                    outln!("Deleted layer: {}", sandbox_entry.name.green());
                     deleted_sandboxes
                         .push(Value::String(sandbox_entry.name.clone()));
                 }
                 Err(e) => {
-                    outln!("Error deleting sandbox: {}", e);
+                    outln!("Error deleting layer: {}", e);
                     errors.push(Value::String(e.to_string()));
                 }
             }
         }
     }
 
-    outln!("{} sandboxes deleted", deleted_sandboxes.len());
+    outln!("{} layers deleted", deleted_sandboxes.len());
 
     // Set JSON output
     set_json_output("status", &Value::String("success".to_string()));

@@ -44,7 +44,7 @@ impl SandboxSettings {
 
     pub fn save_to_file(&self, path: &Path) -> Result<()> {
         let settings_json = serde_json::to_string_pretty(self)
-            .context("Failed to serialize sandbox settings to JSON")?;
+            .context("Failed to serialize layer settings to JSON")?;
         std::fs::write(path, settings_json).context(format!(
             "Failed to write settings.json to {}",
             path.display()
@@ -77,7 +77,7 @@ impl SandboxSettings {
 
         if self.network != current_settings.network {
             return Err(anyhow!(
-                "Network configuration has changed. Existing: {:?}, Current: {:?}. Please stop existing sandbox to change network settings.",
+                "Network configuration has changed. Existing: {:?}, Current: {:?}. Please stop existing layer to change network settings.",
                 self.network,
                 current_settings.network
             ));
@@ -87,7 +87,7 @@ impl SandboxSettings {
             || self.memory != current_settings.memory
         {
             return Err(anyhow!(
-                "Resource limits have changed. Existing: {}, Current: {}. Please stop the existing sandbox to change resource limits.",
+                "Resource limits have changed. Existing: {}, Current: {}. Please stop the existing layer to change resource limits.",
                 describe_limits(self.cpus, self.memory),
                 describe_limits(current_settings.cpus, current_settings.memory),
             ));
@@ -124,7 +124,7 @@ impl SandboxSettings {
             }
 
             error_msg.push_str(
-                "Please stop the existing sandbox to change mount settings.",
+                "Please stop the existing layer to change mount settings.",
             );
             return Err(anyhow!(error_msg));
         }
@@ -161,7 +161,9 @@ impl SandboxSettings {
                 }
             }
 
-            error_msg.push_str("Please stop the existing sandbox to change bind mount settings.");
+            error_msg.push_str(
+                "Please stop the existing layer to change bind mount settings.",
+            );
             return Err(anyhow!(error_msg));
         }
 

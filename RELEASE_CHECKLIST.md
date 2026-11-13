@@ -3,4 +3,4 @@
 -   [ ] `git push origin 0.x.0`
 -   [ ] `make package`
 -   [ ] Release on GitHub, upload files from `dist`
--   [ ] Update `sandbox-bin/PKGBUILD` with new versions and sha256sums, `make` to validate, commit and push.
+-   [ ] Update `devlayer-bin/PKGBUILD` with new versions and sha256sums, `make` to validate, commit and push.

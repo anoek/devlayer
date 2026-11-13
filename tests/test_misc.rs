@@ -91,8 +91,11 @@ fn test_weird_sudo_env_variables(sandbox: SandboxManager) -> Result<()> {
     let mut cmd = Command::new("sudo");
     cmd.args([
         "-E",
-        format!("SANDBOX_STORAGE_DIR={}", absolute_dir_with_spaces.display())
-            .as_str(),
+        format!(
+            "DEVLAYER_STORAGE_DIR={}",
+            absolute_dir_with_spaces.display()
+        )
+        .as_str(),
         &sandbox_bin,
     ]);
     cmd.args([format!("--name={}", &sandbox.name)]);
@@ -143,8 +146,10 @@ fn test_sandbox_no_print_to_stdout_by_default(
 }
 
 #[rstest]
-fn test_sandbox_env_variable_is_set(mut sandbox: SandboxManager) -> Result<()> {
-    let output = sandbox.run(&["sh", "-c", "echo -n $SANDBOX"])?;
+fn test_devlayer_env_variable_is_set(
+    mut sandbox: SandboxManager,
+) -> Result<()> {
+    let output = sandbox.run(&["sh", "-c", "echo -n $DEVLAYER"])?;
     assert_eq!(String::from_utf8_lossy(&output.stdout), sandbox.name);
     Ok(())
 }

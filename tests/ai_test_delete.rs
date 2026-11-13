@@ -20,7 +20,7 @@ fn test_delete_single_sandbox() -> Result<()> {
     // Delete with confirmation (use -y flag)
     sandbox.run(&["delete", "-y", &name])?;
     assert!(sandbox.last_stdout.contains(&name));
-    assert!(sandbox.last_stdout.contains("1 sandboxes deleted"));
+    assert!(sandbox.last_stdout.contains("1 layers deleted"));
 
     // Verify sandbox no longer exists
     sandbox.run(&["list"])?;
@@ -39,13 +39,13 @@ fn test_delete_current_sandbox_without_y() -> Result<()> {
 
     // Delete without patterns and without -y should prompt for current sandbox
     // TODO: Once the bug is fixed, this should show the current sandbox
-    // For now it will show "No default sandbox found"
+    // For now it will show "No default layer found"
     sandbox.run_with_stdin(&["delete"], "n\n")?;
 
     assert!(
         sandbox
             .last_stdout
-            .contains("The following sandboxes will be deleted")
+            .contains("The following layers will be deleted")
     );
     assert!(sandbox.last_stdout.contains(&sandbox.name));
 
@@ -62,12 +62,12 @@ fn test_delete_current_sandbox_no_pattern() -> Result<()> {
 
     // Delete without pattern should delete current sandbox
     // NOTE: There's a bug in the current implementation where patterns.is_empty()
-    // is checked twice with contradictory logic, so it currently shows "No default sandbox"
+    // is checked twice with contradictory logic, so it currently shows "No default layer"
     sandbox.run(&["delete", "-y"])?;
 
     // TODO: Once the bug is fixed, this should delete the current sandbox
     // For now, we test what it actually does
-    assert!(sandbox.last_stdout.contains("1 sandboxes deleted"));
+    assert!(sandbox.last_stdout.contains("1 layers deleted"));
 
     Ok(())
 }
@@ -78,7 +78,7 @@ fn test_delete_current_non_existent_sandbox() -> Result<()> {
     let _name = sandbox.name.clone();
 
     sandbox.run_with_stdin(&["delete"], "y\n")?;
-    assert!(sandbox.last_stdout.contains("No sandbox by the name"));
+    assert!(sandbox.last_stdout.contains("No layer by the name"));
 
     Ok(())
 }
@@ -89,7 +89,7 @@ fn test_delete_shows_sandbox_status() -> Result<()> {
     let mut sandbox2 = sandbox();
 
     // Give them unique but similar names
-    let base_name = format!("sandbox-coverage-test-del-status-{}", rid());
+    let base_name = format!("devlayer-coverage-test-del-status-{}", rid());
     sandbox1.name = format!("{}-1", base_name);
     sandbox2.name = format!("{}-2", base_name);
     let name1 = sandbox1.name.clone();
@@ -109,7 +109,7 @@ fn test_delete_shows_sandbox_status() -> Result<()> {
     assert!(sandbox1.last_stdout.contains(&name1));
     assert!(sandbox1.last_stdout.contains(&name2));
     // The actual output format shows "running" or "stopped" before the sandbox name
-    assert!(sandbox1.last_stdout.contains("2 sandboxes deleted"));
+    assert!(sandbox1.last_stdout.contains("2 layers deleted"));
 
     Ok(())
 }
@@ -121,9 +121,9 @@ fn test_delete_multiple_sandboxes_with_pattern() -> Result<()> {
     let mut sandbox3 = sandbox();
 
     // Give them related names
-    sandbox1.name = format!("sandbox-coverage-test-delete-{}", rid());
-    sandbox2.name = format!("sandbox-coverage-test-delete-{}", rid());
-    sandbox3.name = format!("sandbox-coverage-test-other-{}", rid());
+    sandbox1.name = format!("devlayer-coverage-test-delete-{}", rid());
+    sandbox2.name = format!("devlayer-coverage-test-delete-{}", rid());
+    sandbox3.name = format!("devlayer-coverage-test-other-{}", rid());
 
     // Create sandboxes
     sandbox1.run(&["true"])?;
@@ -131,7 +131,7 @@ fn test_delete_multiple_sandboxes_with_pattern() -> Result<()> {
     sandbox3.run(&["true"])?;
 
     // Delete sandboxes matching pattern
-    sandbox1.run(&["delete", "-y", "sandbox-coverage-test-delete*"])?;
+    sandbox1.run(&["delete", "-y", "devlayer-coverage-test-delete*"])?;
 
     // Should show the sandboxes being deleted
     assert!(sandbox1.last_stdout.contains(&sandbox1.name));
@@ -142,7 +142,7 @@ fn test_delete_multiple_sandboxes_with_pattern() -> Result<()> {
     let deleted_count = sandbox1
         .last_stdout
         .lines()
-        .filter(|line| line.contains("Deleted sandbox:"))
+        .filter(|line| line.contains("Deleted layer:"))
         .count();
     assert!(deleted_count >= 2);
 
@@ -160,8 +160,8 @@ fn test_delete_no_matching_sandboxes() -> Result<()> {
     let mut sandbox = sandbox();
 
     // Try to delete non-existent sandbox
-    sandbox.run(&["delete", "-y", "non-existent-sandbox"])?;
-    assert!(sandbox.last_stdout.contains("No sandboxes found matching"));
+    sandbox.run(&["delete", "-y", "non-existent-layer"])?;
+    assert!(sandbox.last_stdout.contains("No layers found matching"));
 
     Ok(())
 }
@@ -184,7 +184,7 @@ fn test_delete_stopped_sandbox() -> Result<()> {
     assert!(sandbox.last_stdout.contains("0 entries"));
     assert!(sandbox.last_stdout.contains("stopped"));
     assert!(sandbox.last_stdout.contains(&name));
-    assert!(sandbox.last_stdout.contains("1 sandboxes deleted"));
+    assert!(sandbox.last_stdout.contains("1 layers deleted"));
 
     Ok(())
 }
@@ -247,7 +247,7 @@ fn test_delete_stopped_sandbox_by_name() -> Result<()> {
     assert!(sandbox.last_stdout.contains("0 entries"));
     assert!(sandbox.last_stdout.contains("stopped"));
     assert!(sandbox.last_stdout.contains(&name));
-    assert!(sandbox.last_stdout.contains("1 sandboxes deleted"));
+    assert!(sandbox.last_stdout.contains("1 layers deleted"));
 
     Ok(())
 }
@@ -256,7 +256,7 @@ fn test_delete_stopped_sandbox_by_name() -> Result<()> {
 fn test_delete_failure(mut sandbox: SandboxManager) -> Result<()> {
     sandbox.run(&["true"])?;
     assert!(sandbox.epass(&["delete", "-y"], "TEST_DELETE_FAILURE", "1"));
-    assert!(sandbox.last_stdout.contains("Error deleting sandbox"));
+    assert!(sandbox.last_stdout.contains("Error deleting layer"));
     Ok(())
 }
 
@@ -275,7 +275,7 @@ fn test_delete_running_sandbox_by_name() -> Result<()> {
     sandbox.run_with_stdin(&["delete", &name], "y\n")?;
     assert!(sandbox.last_stdout.contains("running"));
     assert!(sandbox.last_stdout.contains(&name));
-    assert!(sandbox.last_stdout.contains("1 sandboxes deleted"));
+    assert!(sandbox.last_stdout.contains("1 layers deleted"));
 
     Ok(())
 }
@@ -291,7 +291,7 @@ fn test_delete_running_sandbox_no_modifications_no_confirm() -> Result<()> {
     // Delete should work even though there are no modifications
     sandbox.run(&["delete", "-y", &name])?;
     assert!(sandbox.last_stdout.contains(&name));
-    assert!(sandbox.last_stdout.contains("1 sandboxes deleted"));
+    assert!(sandbox.last_stdout.contains("1 layers deleted"));
 
     // Verify sandbox no longer exists
     sandbox.run(&["list"])?;
@@ -307,7 +307,7 @@ fn test_delete_multiple_stopped_sandboxes() -> Result<()> {
     let mut sandbox3 = sandbox();
 
     // Give them related names
-    let base_name = format!("sandbox-coverage-test-del-stopped-{}", rid());
+    let base_name = format!("devlayer-coverage-test-del-stopped-{}", rid());
     sandbox1.name = format!("{}-1", base_name);
     sandbox2.name = format!("{}-2", base_name);
     sandbox3.name = format!("{}-3", base_name);
@@ -332,7 +332,7 @@ fn test_delete_multiple_stopped_sandboxes() -> Result<()> {
     assert!(sandbox1.last_stdout.contains(&name1));
     assert!(sandbox1.last_stdout.contains(&name2));
     assert!(sandbox1.last_stdout.contains(&name3));
-    assert!(sandbox1.last_stdout.contains("3 sandboxes deleted"));
+    assert!(sandbox1.last_stdout.contains("3 layers deleted"));
 
     Ok(())
 }
@@ -344,7 +344,7 @@ fn test_delete_mixed_running_and_stopped_sandboxes() -> Result<()> {
     let mut sandbox3 = sandbox();
 
     // Give them related names
-    let base_name = format!("sandbox-coverage-test-del-mixed-{}", rid());
+    let base_name = format!("devlayer-coverage-test-del-mixed-{}", rid());
     sandbox1.name = format!("{}-running", base_name);
     sandbox2.name = format!("{}-stopped", base_name);
     sandbox3.name = format!("{}-also-running", base_name);
@@ -367,7 +367,7 @@ fn test_delete_mixed_running_and_stopped_sandboxes() -> Result<()> {
     assert!(sandbox1.last_stdout.contains(&name1));
     assert!(sandbox1.last_stdout.contains(&name2));
     assert!(sandbox1.last_stdout.contains(&name3));
-    assert!(sandbox1.last_stdout.contains("3 sandboxes deleted"));
+    assert!(sandbox1.last_stdout.contains("3 layers deleted"));
 
     // Verify all are deleted
     sandbox1.run(&["list"])?;
@@ -413,7 +413,7 @@ fn test_delete_confirmation_yes() -> Result<()> {
 
     // Test confirming with 'y'
     sandbox.run_with_stdin(&["delete", &name], "y\n")?;
-    assert!(sandbox.last_stdout.contains("1 sandboxes deleted"));
+    assert!(sandbox.last_stdout.contains("1 layers deleted"));
     assert!(sandbox.last_stdout.contains(&name));
 
     Ok(())
@@ -519,7 +519,7 @@ fn test_delete_with_modifications() -> Result<()> {
     // Delete with -y flag just shows success messages
     sandbox.run(&["delete", "-y", &name])?;
     assert!(sandbox.last_stdout.contains(&name));
-    assert!(sandbox.last_stdout.contains("1 sandboxes deleted"));
+    assert!(sandbox.last_stdout.contains("1 layers deleted"));
 
     Ok(())
 }
@@ -553,6 +553,6 @@ fn test_delete_ignore_invalid_upper_dirs(
     //sandbox.run(&["true"])?;
     // Now delete should process these directories and skip them
     sandbox.run_with_stdin(&["delete"], "y\n")?;
-    assert!(sandbox.last_stdout.contains("1 sandboxes deleted"));
+    assert!(sandbox.last_stdout.contains("1 layers deleted"));
     Ok(())
 }

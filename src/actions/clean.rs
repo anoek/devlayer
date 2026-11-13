@@ -11,7 +11,7 @@ use std::path::Path;
 /// Sandboxes created by the test suite. These are always cleaned up,
 /// running or not.
 const TEST_SANDBOX_PATTERNS: &[&str] =
-    &["sandbox-coverage-*", "sandbox-bind-empty-*"];
+    &["devlayer-coverage-*", "devlayer-bind-empty-*"];
 
 /// Stopped ephemeral sandboxes older than this are cleaned up.
 const EPHEMERAL_MAX_AGE_DAYS: i64 = 7;
@@ -21,7 +21,7 @@ pub fn clean(
     sandboxes_storage_dir: &Path,
     force: bool,
 ) -> Result<()> {
-    trace!("Finding sandboxes to clean");
+    trace!("Finding layers to clean");
 
     let [running_sandboxes, stopped_sandboxes] =
         get_sandboxes(sandboxes_storage_dir, &[])?;
@@ -41,7 +41,7 @@ pub fn clean(
         .collect();
 
     if running_to_delete.is_empty() && stopped_to_delete.is_empty() {
-        outln!("No sandboxes to clean.");
+        outln!("No layers to clean.");
         return Ok(());
     }
 

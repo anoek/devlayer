@@ -18,7 +18,7 @@ fn test_builtin_ignore_patterns_tmp(mut sandbox: SandboxManager) -> Result<()> {
     ])?;
 
     // Create files in /tmp that would normally be tracked
-    sandbox.run(&["sh", "-c", "mkdir -p /tmp/sandbox-builtin-test && echo 'test' > /tmp/sandbox-builtin-test/should-be-ignored.txt"])?;
+    sandbox.run(&["sh", "-c", "mkdir -p /tmp/layer-builtin-test && echo 'test' > /tmp/layer-builtin-test/should-be-ignored.txt"])?;
 
     // Also create a visible file for comparison
     let test_dir = sandbox.test_filename("tmp-test");
@@ -41,14 +41,14 @@ fn test_builtin_ignore_patterns_tmp(mut sandbox: SandboxManager) -> Result<()> {
 
     // The /tmp file should appear with --ignored but not without
     assert!(
-        stdout_ignored.contains("sandbox-builtin-test")
+        stdout_ignored.contains("layer-builtin-test")
             || stdout_ignored.contains("should-be-ignored"),
         "Files in /tmp should show with --ignored flag. Got: {}",
         stdout_ignored
     );
 
     assert!(
-        !stdout.contains("sandbox-builtin-test")
+        !stdout.contains("layer-builtin-test")
             && !stdout.contains("should-be-ignored"),
         "Files in /tmp should be ignored by built-in patterns. Got: {}",
         stdout
@@ -62,7 +62,7 @@ fn test_builtin_ignore_patterns_tmp(mut sandbox: SandboxManager) -> Result<()> {
     );
 
     // Clean up
-    sandbox.run(&["sh", "-c", "rm -rf /tmp/sandbox-builtin-test"])?;
+    sandbox.run(&["sh", "-c", "rm -rf /tmp/layer-builtin-test"])?;
 
     Ok(())
 }
@@ -84,11 +84,11 @@ fn test_builtin_ignore_patterns_home_dotfiles(
 
     // The patterns /home/*/.*/** and /home/*/.*  ignore hidden files in home dirs
     // Create hidden files in user's home
-    sandbox.run(&["sh", "-c", "mkdir -p ~/.sandbox-builtin-test && echo 'hidden' > ~/.sandbox-builtin-test/file.txt"])?;
+    sandbox.run(&["sh", "-c", "mkdir -p ~/.layer-builtin-test && echo 'hidden' > ~/.layer-builtin-test/file.txt"])?;
     sandbox.run(&[
         "sh",
         "-c",
-        "echo 'hidden' > ~/.sandbox-builtin-hidden-file",
+        "echo 'hidden' > ~/.layer-builtin-hidden-file",
     ])?;
 
     // Create a visible file for comparison in test directory
@@ -112,14 +112,14 @@ fn test_builtin_ignore_patterns_home_dotfiles(
 
     // Hidden files should show with --ignored but not without
     assert!(
-        stdout_ignored.contains(".sandbox-builtin")
+        stdout_ignored.contains(".layer-builtin")
             || stdout_ignored.contains("hidden-file"),
         "Hidden files should show with --ignored flag. Got: {}",
         stdout_ignored
     );
 
     assert!(
-        !stdout.contains(".sandbox-builtin") && !stdout.contains("hidden-file"),
+        !stdout.contains(".layer-builtin") && !stdout.contains("hidden-file"),
         "Hidden files in home should be ignored by built-in patterns. Got: {}",
         stdout
     );
@@ -135,7 +135,7 @@ fn test_builtin_ignore_patterns_home_dotfiles(
     sandbox.run(&[
         "sh",
         "-c",
-        "rm -rf ~/.sandbox-builtin-test ~/.sandbox-builtin-hidden-file",
+        "rm -rf ~/.layer-builtin-test ~/.layer-builtin-hidden-file",
     ])?;
 
     Ok(())

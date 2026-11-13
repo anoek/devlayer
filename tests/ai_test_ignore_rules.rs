@@ -690,7 +690,7 @@ fn test_env_flag_includes_ignored(mut sandbox: SandboxManager) -> Result<()> {
 
     // Call `status` WITHOUT the flag but WITH env var set to true
     sandbox.set_ignored(false); // Disable automatic --ignored
-    sandbox.run_with_env(&["status", &test_dir], "SANDBOX_IGNORED", "true")?;
+    sandbox.run_with_env(&["status", &test_dir], "DEVLAYER_IGNORED", "true")?;
     let stdout = sandbox.last_stdout.clone();
     sandbox.set_ignored(true); // Reset back
 
@@ -701,16 +701,20 @@ fn test_env_flag_includes_ignored(mut sandbox: SandboxManager) -> Result<()> {
     // Invalid value for SANDBOX_IGNORED
     sandbox.set_ignored(false); // Disable automatic --ignored
     let result =
-        sandbox.run_with_env(&["status", &test_dir], "SANDBOX_IGNORED", "cow");
+        sandbox.run_with_env(&["status", &test_dir], "DEVLAYER_IGNORED", "cow");
     sandbox.set_ignored(true); // Reset back
     assert!(
         result.is_err(),
-        "Expected error for invalid SANDBOX_IGNORED value"
+        "Expected error for invalid DEVLAYER_IGNORED value"
     );
 
     // False value for SANDBOX_IGNORED
     sandbox.set_ignored(false); // Disable automatic --ignored
-    sandbox.run_with_env(&["status", &test_dir], "SANDBOX_IGNORED", "false")?;
+    sandbox.run_with_env(
+        &["status", &test_dir],
+        "DEVLAYER_IGNORED",
+        "false",
+    )?;
     let stdout = sandbox.last_stdout.clone();
     sandbox.set_ignored(true); // Reset back
     assert!(!stdout.contains(ignored_file.to_str().unwrap()));
@@ -721,7 +725,7 @@ fn test_env_flag_includes_ignored(mut sandbox: SandboxManager) -> Result<()> {
     // and test that it overrides the env var
     sandbox.set_ignored(false); // Disable automatic --ignored
     let output = Command::new("sudo")
-        .env("SANDBOX_IGNORED", "false")
+        .env("DEVLAYER_IGNORED", "false")
         .args(["-E", &sandbox.sandbox_bin])
         .args([
             "-v",

@@ -47,7 +47,7 @@ pub fn parse_cpus(spec: &str, available: usize) -> Result<Option<f64>> {
 
     if cpus < MIN_CPUS {
         return Err(anyhow!(
-            "Invalid cpus value '{}': this leaves {} of the {} available CPUs for the sandbox, the minimum is {}",
+            "Invalid cpus value '{}': this leaves {} of the {} available CPUs for the layer, the minimum is {}",
             spec,
             cpus.max(0.0),
             available,

@@ -10,9 +10,9 @@ use std::{path::Path, process::Command};
 
 #[rstest]
 fn test_accept_root_file(mut sandbox: SandboxManager) -> Result<()> {
-    let dirname = "/delete-me-this-is-a-sandbox-coverage-test-dir";
-    let filename =
-        dirname.to_string() + "/delete-me-this-is-a-sandbox-coverage-test-file";
+    let dirname = "/delete-me-this-is-a-devlayer-coverage-test-dir";
+    let filename = dirname.to_string()
+        + "/delete-me-this-is-a-devlayer-coverage-test-file";
     Command::new("sudo").arg("mkdir").arg(dirname).output()?;
     Command::new("sudo").arg("touch").arg(&filename).output()?;
     Command::new("sudo")

@@ -82,10 +82,10 @@ fn test_clean_removes_old_ephemeral_and_test_sandboxes() -> Result<()> {
     let old = ephemeral_name(TimeDelta::days(8));
     let recent = ephemeral_name(TimeDelta::days(6));
     let bad_date = format!("ephemeral_not-a-date-{}", id);
-    let coverage = format!("sandbox-coverage-test-clean-{}", id);
-    let bind_empty = format!("sandbox-bind-empty-sudo-{}", id);
+    let coverage = format!("devlayer-coverage-test-clean-{}", id);
+    let bind_empty = format!("devlayer-bind-empty-sudo-{}", id);
     let bind_empty_dest =
-        format!("sandbox-bind-empty-dest-sandbox-coverage-test-{}", id);
+        format!("devlayer-bind-empty-dest-devlayer-coverage-test-{}", id);
     let regular = format!("clean-keep-{}", id);
 
     for name in [
@@ -101,7 +101,7 @@ fn test_clean_removes_old_ephemeral_and_test_sandboxes() -> Result<()> {
     }
 
     env.run(&["clean", "-y"])?;
-    assert!(env.sandbox.last_stdout.contains("4 sandboxes deleted"));
+    assert!(env.sandbox.last_stdout.contains("4 layers deleted"));
 
     for name in [&old, &coverage, &bind_empty, &bind_empty_dest] {
         assert!(!env.exists(name), "{} should have been cleaned", name);
@@ -125,7 +125,7 @@ fn test_clean_prompts_for_confirmation() -> Result<()> {
     assert!(
         env.sandbox
             .last_stdout
-            .contains("The following sandboxes will be deleted")
+            .contains("The following layers will be deleted")
     );
     assert!(env.sandbox.last_stdout.contains(&old_stopped));
     assert!(
@@ -144,7 +144,7 @@ fn test_clean_nothing_to_clean() -> Result<()> {
     env.create_stopped(&ephemeral_name(TimeDelta::zero()))?;
 
     env.run(&["clean", "-y"])?;
-    assert!(env.sandbox.last_stdout.contains("No sandboxes to clean."));
+    assert!(env.sandbox.last_stdout.contains("No layers to clean."));
 
     Ok(())
 }

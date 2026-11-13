@@ -156,7 +156,7 @@ fn ai_test_bind_env_overrides_config(
 
     sandbox.run_with_env(
         &["--no-default-binds", "--config", &config, "config", "bind"],
-        "SANDBOX_BIND",
+        "DEVLAYER_BIND",
         &format!("{dir}::ro"),
     )?;
     assert_eq!(sandbox.last_stdout.trim(), format!("{dir}::ro"));
@@ -164,7 +164,7 @@ fn ai_test_bind_env_overrides_config(
     // Conflicts within the environment layer still fail
     assert!(sandbox.exfail(
         &["--no-default-binds", "config"],
-        "SANDBOX_BIND",
+        "DEVLAYER_BIND",
         &format!("{dir},{dir}::ro"),
     ));
 
@@ -189,7 +189,7 @@ fn ai_test_bind_cli_overrides_config_and_env(
             "config",
             "bind",
         ],
-        "SANDBOX_BIND",
+        "DEVLAYER_BIND",
         &format!("{dir}::ro"),
     )?;
     assert_eq!(sandbox.last_stdout.trim(), dir);

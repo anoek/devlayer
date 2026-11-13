@@ -49,18 +49,18 @@ fn test_sandbox_creation_nested_storage(
 ) -> Result<()> {
     let nested_storage = format!(
         "/tmp/{}",
-        sandbox.test_filename("nested/storage/path/for/sandbox")
+        sandbox.test_filename("nested/storage/path/for/layer")
     );
 
-    sandbox.epass(&["true"], "SANDBOX_STORAGE_DIR", &nested_storage);
+    sandbox.epass(&["true"], "DEVLAYER_STORAGE_DIR", &nested_storage);
     sandbox.epass(
         &["accept", "**/*.profraw"],
-        "SANDBOX_STORAGE_DIR",
+        "DEVLAYER_STORAGE_DIR",
         &nested_storage,
     );
 
-    sandbox.epass(&["stop"], "SANDBOX_STORAGE_DIR", &nested_storage);
-    sandbox.epass(&["delete"], "SANDBOX_STORAGE_DIR", &nested_storage);
+    sandbox.epass(&["stop"], "DEVLAYER_STORAGE_DIR", &nested_storage);
+    sandbox.epass(&["delete"], "DEVLAYER_STORAGE_DIR", &nested_storage);
 
     Ok(())
 }

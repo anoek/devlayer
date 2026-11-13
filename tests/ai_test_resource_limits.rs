@@ -41,7 +41,7 @@ fn limits_available(sandbox: &mut SandboxManager) -> bool {
 /// Finds our sandbox's cgroup on the host, if it has one
 fn host_cgroup(sandbox: &SandboxManager) -> Option<PathBuf> {
     let suffix = format!("-{}", sandbox.name);
-    fs::read_dir("/sys/fs/cgroup/sandbox")
+    fs::read_dir("/sys/fs/cgroup/layer")
         .ok()?
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
@@ -98,14 +98,14 @@ fn ai_test_limits_env(mut sandbox: SandboxManager) -> Result<()> {
     let args = ["--no-config", "config"];
     sandbox.run_with_env(
         &[&args[..], &["cpus"]].concat(),
-        "SANDBOX_CPUS",
+        "DEVLAYER_CPUS",
         "3",
     )?;
     assert_eq!(sandbox.last_stdout.trim(), "3");
 
     sandbox.run_with_env(
         &[&args[..], &["memory"]].concat(),
-        "SANDBOX_MEMORY",
+        "DEVLAYER_MEMORY",
         "2G",
     )?;
     assert_eq!(sandbox.last_stdout.trim(), (2u64 << 30).to_string());
@@ -113,7 +113,7 @@ fn ai_test_limits_env(mut sandbox: SandboxManager) -> Result<()> {
     // Empty values are ignored
     sandbox.run_with_env(
         &[&args[..], &["cpus"]].concat(),
-        "SANDBOX_CPUS",
+        "DEVLAYER_CPUS",
         "",
     )?;
     assert_eq!(sandbox.last_stdout.trim(), "unlimited");
@@ -121,7 +121,7 @@ fn ai_test_limits_env(mut sandbox: SandboxManager) -> Result<()> {
     // The CLI takes precedence over the environment
     sandbox.run_with_env(
         &["--no-config", "--cpus=1", "config", "cpus"],
-        "SANDBOX_CPUS",
+        "DEVLAYER_CPUS",
         "3",
     )?;
     assert_eq!(sandbox.last_stdout.trim(), "1");
@@ -157,7 +157,7 @@ fn ai_test_limits_config_file(mut sandbox: SandboxManager) -> Result<()> {
     // The environment takes precedence over config files
     sandbox.run_with_env(
         &["--config", &config, "config", "cpus"],
-        "SANDBOX_CPUS",
+        "DEVLAYER_CPUS",
         "2",
     )?;
     assert_eq!(sandbox.last_stdout.trim(), "2");
@@ -220,7 +220,7 @@ fn ai_test_limits_applied(mut sandbox: SandboxManager) -> Result<()> {
     assert_eq!(run(&mut sandbox, &["cat", "/proc/self/cgroup"])?, "0::/");
 
     // Processes that join the running sandbox are in its cgroup too
-    let cgroup = host_cgroup(&sandbox).expect("sandbox cgroup should exist");
+    let cgroup = host_cgroup(&sandbox).expect("layer cgroup should exist");
     let mut child =
         sandbox.run_in_background(&[args[0], args[1], "sleep", "30"])?;
     let mut joined = false;
@@ -232,7 +232,7 @@ fn ai_test_limits_applied(mut sandbox: SandboxManager) -> Result<()> {
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
-    assert!(joined, "sleep should have joined the sandbox cgroup");
+    assert!(joined, "sleep should have joined the layer cgroup");
 
     // Stopping the sandbox removes its cgroup
     sandbox.run(&["stop"])?;
@@ -330,7 +330,7 @@ fn ai_test_limits_stale_cgroup(mut sandbox: SandboxManager) -> Result<()> {
     }
 
     // Kill the sandbox without cleaning up, leaving an empty cgroup behind
-    let cgroup = host_cgroup(&sandbox).expect("sandbox cgroup should exist");
+    let cgroup = host_cgroup(&sandbox).expect("layer cgroup should exist");
     sandbox.run(&["config", "sandbox_dir"])?;
     let pid_file = format!("{}.pid", sandbox.last_stdout.trim());
     let pid = fs::read_to_string(&pid_file)?;
@@ -404,7 +404,7 @@ fn ai_test_limits_setup_failures(mut sandbox: SandboxManager) -> Result<()> {
         "TEST_START_SANDBOX_FAILURE",
         "1"
     ));
-    assert!(sandbox.last_stderr.contains("Failed to start sandbox"));
+    assert!(sandbox.last_stderr.contains("Failed to start layer"));
     assert!(host_cgroup(&sandbox).is_none());
     Ok(())
 }
@@ -505,7 +505,7 @@ fn ai_test_limits_stop_cgroup_busy(mut sandbox: SandboxManager) -> Result<()> {
 
     // A child cgroup keeps the sandbox's cgroup from being removed, so stop
     // retries for a while and then gives up without failing
-    let cgroup = host_cgroup(&sandbox).expect("sandbox cgroup should exist");
+    let cgroup = host_cgroup(&sandbox).expect("layer cgroup should exist");
     let child = cgroup.join("busy");
     let sudo =
         |args: &[&str]| std::process::Command::new("sudo").args(args).status();
@@ -543,7 +543,7 @@ fn ai_test_limits_unlimited_override(
 
     sandbox.run_with_env(
         &["--config", &config, "config", "cpus"],
-        "SANDBOX_CPUS",
+        "DEVLAYER_CPUS",
         "unlimited",
     )?;
     assert_eq!(sandbox.last_stdout.trim(), "unlimited");
@@ -590,7 +590,7 @@ fn ai_test_limits_nested(mut sandbox: SandboxManager) -> Result<()> {
     assert_eq!(sandbox.last_stdout.trim(), "200000 100000");
     assert!(
         sandbox.last_stderr.contains(
-            "shares the limits of the sandbox it's running in (cpus=2 memory=unlimited)"
+            "shares the limits of the layer it's running in (cpus=2 memory=unlimited)"
         ),
         "{}",
         sandbox.last_stderr
@@ -601,7 +601,7 @@ fn ai_test_limits_nested(mut sandbox: SandboxManager) -> Result<()> {
     sandbox.run(&["--no-config", &inner, "--no-config", "--cpus=1", "true"])?;
     assert!(
         sandbox.last_stderr.contains(
-            "shares the limits of the sandbox it's running in (cpus=unlimited memory=unlimited)"
+            "shares the limits of the layer it's running in (cpus=unlimited memory=unlimited)"
         ),
         "{}",
         sandbox.last_stderr
@@ -619,7 +619,7 @@ fn ai_test_limits_delete_removes_cgroup(
 
     // delete stops sandboxes without knowing which user started them, so
     // it has to find the cgroup from the running sandbox
-    let cgroup = host_cgroup(&sandbox).expect("sandbox cgroup should exist");
+    let cgroup = host_cgroup(&sandbox).expect("layer cgroup should exist");
     let name = sandbox.name.clone();
     sandbox.run(&["delete", "-y", &name])?;
     assert!(!cgroup.exists());

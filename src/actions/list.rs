@@ -12,13 +12,13 @@ use crate::{
 };
 
 pub fn list(sandboxes_storage_dir: &Path, patterns: &[String]) -> Result<()> {
-    trace!("Listing sandboxes");
+    trace!("Listing layers");
 
     let [running_sandboxes, stopped_sandboxes] =
         get_sandboxes(sandboxes_storage_dir, patterns)?;
 
     if !running_sandboxes.is_empty() {
-        outln!("Running sandboxes:");
+        outln!("Running layers:");
         for sandbox in &running_sandboxes {
             outln!("{}", sandbox);
         }
@@ -29,20 +29,20 @@ pub fn list(sandboxes_storage_dir: &Path, patterns: &[String]) -> Result<()> {
     }
 
     if !stopped_sandboxes.is_empty() {
-        outln!("{}", "Stopped sandboxes:".dimmed());
+        outln!("{}", "Stopped layers:".dimmed());
         for sandbox in &stopped_sandboxes {
             outln!("{}", sandbox.dimmed());
         }
     }
 
     set_json_output(
-        "running_sandboxes",
+        "running_layers",
         &Value::Array(
             running_sandboxes.into_iter().map(Value::String).collect(),
         ),
     );
     set_json_output(
-        "stopped_sandboxes",
+        "stopped_layers",
         &Value::Array(
             stopped_sandboxes.into_iter().map(Value::String).collect(),
         ),

@@ -20,7 +20,7 @@ fn test_no_mounts_found(mut sandbox: SandboxManager) -> Result<()> {
     assert!(sandbox.exfail(&["env"], "TEST_NO_MOUNTS_FOUND", "1"));
     assert!(sandbox.pass(&["true"]));
     assert!(sandbox.epass(&["stop"], "TEST_NO_MOUNTS_FOUND", "1"));
-    assert!(sandbox.last_stderr.contains("No mounts found for sandbox"));
+    assert!(sandbox.last_stderr.contains("No mounts found for layer"));
     Ok(())
 }
 

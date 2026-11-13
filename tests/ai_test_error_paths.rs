@@ -48,7 +48,8 @@ fn ai_test_new_with_unusable_storage_dir(
     // when the storage directory can't be used. --new conflicts with the
     // --name the fixture normally adds.
     sandbox.no_default_options = true;
-    let storage_dir = format!("--storage-dir=/proc/sandbox-coverage-{}", rid());
+    let storage_dir =
+        format!("--storage-dir=/proc/devlayer-coverage-{}", rid());
     assert!(sandbox.xfail(&["--new", &storage_dir, "config", "name"]));
     assert!(
         sandbox

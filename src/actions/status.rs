@@ -19,7 +19,7 @@ pub fn status(
     sandbox: &Sandbox,
     patterns: &[String],
 ) -> Result<()> {
-    trace!("Status of sandbox {}", sandbox.name);
+    trace!("Status of layer {}", sandbox.name);
 
     let cwd = std::env::current_dir()?;
     let all_changes = sandbox.changes(config)?;

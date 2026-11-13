@@ -18,7 +18,7 @@ const CPU_PERIOD_US: u64 = 100_000;
 
 /// The cgroup all sandbox cgroups are created in
 fn cgroup_parent() -> String {
-    let parent = String::from("sandbox");
+    let parent = String::from("devlayer");
 
     // Lets tests start from a parent cgroup that doesn't exist yet
     #[cfg(feature = "coverage")]
@@ -60,7 +60,7 @@ impl Sandbox {
 
         debug!("{:#}", error);
         warn!(
-            "Resource limits can't be set up inside another sandbox, so this sandbox shares the limits of the sandbox it's running in ({})",
+            "Resource limits can't be set up inside another layer, so this layer shares the limits of the layer it's running in ({})",
             describe_limits(outer.cpus, outer.memory)
         );
         Ok(None)
@@ -115,7 +115,7 @@ impl Sandbox {
             // can remove because it's empty. If it's not empty it belongs to
             // a running sandbox with the same name in another storage dir.
             std::fs::remove_dir(&path).context(format!(
-                "Failed to remove existing cgroup {}, is a sandbox with the same name running from a different storage directory?",
+                "Failed to remove existing cgroup {}, is a layer with the same name running from a different storage directory?",
                 path.display()
             ))?;
         }
@@ -230,7 +230,7 @@ fn enable_controllers(dir: &Path, controllers: &[&str]) -> Result<()> {
     for controller in controllers {
         if !enabled.split_whitespace().any(|c| c == *controller) {
             let context = format!(
-                "Failed to enable the {} cgroup controller. Limiting cpus or memory requires permission to manage {}, which may not be available inside containers or other sandboxes",
+                "Failed to enable the {} cgroup controller. Limiting cpus or memory requires permission to manage {}, which may not be available inside containers or other layers",
                 controller,
                 dir.display()
             );

@@ -10,7 +10,7 @@ use std::{
 #[rstest]
 fn test_fail_to_start_sandbox(mut sandbox: SandboxManager) -> Result<()> {
     assert!(sandbox.exfail(&["env"], "TEST_START_SANDBOX_FAILURE", "1"));
-    assert!(sandbox.all_stderr.contains("Failed to start sandbox"));
+    assert!(sandbox.all_stderr.contains("Failed to start layer"));
     Ok(())
 }
 
@@ -75,7 +75,7 @@ fn test_unable_to_join_sandbox(mut sandbox: SandboxManager) -> Result<()> {
     assert!(
         sandbox
             .last_stderr
-            .contains("Failed to join sandbox namespaces")
+            .contains("Failed to join layer namespaces")
     );
 
     Ok(())

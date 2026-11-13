@@ -23,7 +23,7 @@ pub fn get_running_sandbox_pid(
             .filter(|&pid| kill(pid, None).is_ok())
             .and_then(|pid| {
                 trace!(
-                    "Existing sandbox '{}' found with PID: {}",
+                    "Existing layer '{}' found with PID: {}",
                     sandbox_name, pid
                 );
 
@@ -41,7 +41,7 @@ pub fn get_running_sandbox_pid(
             Some(pid) => return Some(pid),
             None => {
                 trace!(
-                    "Invalid PID file or sandbox was not in a good state, cleaning up"
+                    "Invalid PID file or layer was not in a good state, cleaning up"
                 );
                 std::fs::remove_file(&pid_file).ok();
             }

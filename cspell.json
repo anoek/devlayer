@@ -194,6 +194,7 @@
         "rustlib",
         "rustsec",
         "rustup",
+        "devlayer",
         "sandboxd",
         "sandboxed",
         "sandboxing",

@@ -27,7 +27,7 @@ impl Sandbox {
         let mounts = self.determine_mounts(config)?;
 
         can_mkdir(&self.base, self.uid, self.gid).context(format!(
-                    "Failed to check if we can create the base directory {:?} for the sandbox failed",
+                    "Failed to check if we can create the base directory {:?} for the layer failed",
                     self.base
                 ))?;
         mkdir(&self.base, self.uid, self.gid)?;
@@ -109,7 +109,7 @@ impl Sandbox {
         let settings = SandboxSettings::from_config(config, &result_mounts);
         settings
             .save_to_file(&self.settings_path())
-            .context("Failed to save sandbox settings")?;
+            .context("Failed to save layer settings")?;
 
         Ok(result_mounts)
     }
@@ -120,17 +120,20 @@ impl Sandbox {
 
     pub fn determine_mounts(&self, config: &Config) -> Result<Vec<MountHash>> {
         // Check if we have a settings.json file in our storage dir (for nested sandboxes)
-        let settings_json = Path::new(&config.storage_dir).join("settings.json");
+        let settings_json =
+            Path::new(&config.storage_dir).join("settings.json");
         if settings_json.exists() {
             debug!(
-                "It looks like we are in a nested sandbox, reading mounts from {}",
+                "It looks like we are in a nested layer, reading mounts from {}",
                 settings_json.display()
             );
-            let parent_settings = SandboxSettings::load_from_file(&settings_json)
-                .context(format!(
-                    "Failed to read parent settings.json from {}",
-                    settings_json.display()
-                ))?;
+            let parent_settings = SandboxSettings::load_from_file(
+                &settings_json,
+            )
+            .context(format!(
+                "Failed to read parent settings.json from {}",
+                settings_json.display()
+            ))?;
             return Ok(parent_settings.mounts);
         }
 
@@ -198,7 +201,7 @@ impl Sandbox {
 
         if mounts.is_empty() {
             return Err(anyhow!(
-                "No suitable mounts found for sandbox, something is very wrong"
+                "No suitable mounts found for layer, something is very wrong"
                     .to_string(),
             ));
         }
