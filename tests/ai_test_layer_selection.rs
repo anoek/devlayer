@@ -10,6 +10,10 @@ use std::path::{Path, PathBuf};
 /// under the system temp dir, outside the repository, so layers that other
 /// tests create in the repository root never match --last. Layers created
 /// here are tracked and deleted on drop.
+///
+/// The cwd bind is left on, as it is for a user. The temp dir is often a
+/// tmpfs, which is not part of the layer's overlay, so without the bind the
+/// project directory would not exist inside the layer.
 struct Selection {
     layer: LayerManager,
     storage: PathBuf,
@@ -22,6 +26,7 @@ impl Selection {
         let mut layer = layer;
         // No --join, so the default selection applies
         layer.no_default_options = true;
+        layer.set_bind_cwd(true);
         let root = std::env::temp_dir()
             .join(format!("devlayer-coverage-sel-{}", rid()));
         std::fs::create_dir_all(&root)?;
@@ -145,14 +150,18 @@ fn ai_test_last_nearest_ancestor_and_newest(layer: LayerManager) -> Result<()> {
 fn ai_test_actions_default_to_last(layer: LayerManager) -> Result<()> {
     let mut sel = Selection::new(layer)?;
     let dir = sel.dir("project")?;
-    let outside = sel.root.join("outside-file");
+    // A file outside the bound project directory, in the repository, which
+    // is always part of the overlay (unlike a tmpfs temp dir). It only exists
+    // in the layer, which is deleted on drop.
+    let outside_name = format!("devlayer-coverage-outside-{}", rid());
+    let outside = std::env::current_dir()?.join(&outside_name);
     let outside = outside.to_str().unwrap_or_default().to_string();
 
     assert!(sel.pass(&dir, &["touch", &outside]));
     let name = sel.created()?.into_iter().next();
 
     assert!(sel.pass(&dir, &["status", "/"]));
-    assert!(sel.layer.last_stdout.contains("outside-file"));
+    assert!(sel.layer.last_stdout.contains(&outside_name));
 
     assert!(sel.pass(&dir, &["config", "name"]));
     assert_eq!(Some(sel.stdout()), name);
