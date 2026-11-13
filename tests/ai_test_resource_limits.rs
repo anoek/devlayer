@@ -262,13 +262,18 @@ fn ai_test_limits_memory_enforced(mut layer: LayerManager) -> Result<()> {
     layer.run(&["stop"])?;
 
     // tail has to buffer the whole newline-free input, which won't fit.
-    // memory.events is read in the same command so we see this cgroup's
-    // counters even if the OOM killer took down more than tail.
+    // The devlayer command waiting on the shell is in the cgroup too, so tail
+    // raises its own oom_score_adj to always be the OOM killer's first
+    // choice; otherwise the kernel may kill devlayer instead and we get no
+    // exit status. memory.events is read in the same command so we see this
+    // cgroup's counters.
     layer.run(&[
         "--memory=32M",
         "sh",
         "-c",
-        "head -c 256M /dev/zero | tail > /dev/null; \
+        "head -c 256M /dev/zero \
+         | sh -c 'echo 1000 > /proc/self/oom_score_adj && exec tail' \
+         > /dev/null; \
          echo \"tail exited with $?\"; \
          cat /sys/fs/cgroup/memory.events",
     ])?;
