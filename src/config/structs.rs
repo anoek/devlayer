@@ -89,6 +89,9 @@ pub struct Config {
     pub created_in: PathBuf,
     /// Whether created_in is bound read-write into the layer
     pub bind_cwd: bool,
+    /// Whether that would bind the home directory without a bind of it
+    /// being asked for, which starting the layer refuses
+    pub cwd_bind_is_home: bool,
     /// Number of CPUs the layer may use, None for unlimited
     pub cpus: Option<f64>,
     /// Bytes of memory the layer may use, None for unlimited

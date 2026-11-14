@@ -31,6 +31,7 @@ fn create_test_config() -> ::devlayer::config::Config {
         no_default_llm_binds: false,
         created_in: PathBuf::from("/tmp"),
         bind_cwd: false,
+        cwd_bind_is_home: false,
         cpus: None,
         memory: None,
         config_files: Vec::new(),

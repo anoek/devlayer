@@ -207,6 +207,11 @@ impl Layer {
                 "Refusing to bind / into the layer; run from a project directory or pass --no-bind-cwd"
             ));
         }
+        if config.cwd_bind_is_home {
+            return Err(anyhow!(
+                "Refusing to bind your home directory into the layer, where anything run could change all of it; run from a project directory, pass --no-bind-cwd, or pass --bind=. to bind it anyway"
+            ));
+        }
 
         let mut config = config.clone();
         config.bind_mounts.push(BindMount {

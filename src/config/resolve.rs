@@ -424,6 +424,15 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         .iter()
         .map(|layer| layer.iter().map(|m| parse_bind_mount(m)).collect())
         .collect::<Result<Vec<Vec<BindMount>>>>()?;
+
+    // Binding the home directory takes asking for it, e.g. with --bind=.
+    let cwd_bind_is_home = bind_cwd
+        && uid_gid_home.home.canonicalize().ok().as_ref() == Some(&created_in)
+        && !parsed_layers.iter().flatten().any(|mount| {
+            mount.target == created_in
+                && mount.options != BindMountOptions::Mask
+        });
+
     let mut target_map: HashMap<PathBuf, BindMount> = HashMap::new();
     for layer in path_layers.into_iter().chain(parsed_layers) {
         let mut layer_map: HashMap<PathBuf, BindMount> = HashMap::new();
@@ -471,6 +480,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         no_default_llm_binds,
         created_in,
         bind_cwd,
+        cwd_bind_is_home,
         cpus,
         memory,
         config_files,
@@ -1223,6 +1233,7 @@ mod tests {
             no_default_llm_binds: false,
             created_in: PathBuf::from("/tmp"),
             bind_cwd: false,
+            cwd_bind_is_home: false,
             cpus: None,
             memory: None,
             config_files: vec![],
