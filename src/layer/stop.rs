@@ -3,7 +3,7 @@ use crate::layer::cgroup::remove_cgroup;
 use anyhow::{Context, Result};
 use log::trace;
 use nix::{fcntl::readlink, unistd::Pid};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 impl Layer {
     pub fn stop(&self) -> Result<()> {
@@ -144,7 +144,7 @@ impl Layer {
             }
         }
 
-        let pid_file = PathBuf::from(format!("{}.pid", self.base.display()));
+        let pid_file = self.pid_path();
         trace!("Cleaning up PID file: {}", pid_file.display());
         if pid_file.exists() {
             std::fs::remove_file(&pid_file).context(format!(

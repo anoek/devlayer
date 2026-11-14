@@ -75,6 +75,16 @@ impl Layer {
         }
     }
 
+    /// The bind mount of the layer's data directory, which every layer has
+    fn data_bind_mount(&self) -> BindMount {
+        BindMount {
+            argument: "data".to_string(),
+            source: self.data_storage_dir.clone(),
+            target: self.data_storage_dir.clone(),
+            options: BindMountOptions::ReadWrite,
+        }
+    }
+
     pub fn get(
         layers_storage_dir: &Path,
         layer_name: &str,
@@ -158,12 +168,9 @@ impl Layer {
 
                         // Create a config that includes the implicit data bind mount for validation
                         let mut validation_config = config.clone();
-                        validation_config.bind_mounts.push(BindMount {
-                            argument: "data".to_string(),
-                            source: layer.data_storage_dir.clone(),
-                            target: layer.data_storage_dir.clone(),
-                            options: BindMountOptions::ReadWrite,
-                        });
+                        validation_config
+                            .bind_mounts
+                            .push(layer.data_bind_mount());
 
                         // Validate settings compatibility
                         existing_settings.validate_against_config(
@@ -214,12 +221,7 @@ impl Layer {
         }
 
         let mut config = config.clone();
-        config.bind_mounts.push(BindMount {
-            argument: "data".to_string(),
-            source: layer.data_storage_dir.clone(),
-            target: layer.data_storage_dir.clone(),
-            options: BindMountOptions::ReadWrite,
-        });
+        config.bind_mounts.push(layer.data_bind_mount());
 
         /* Create a cgroup to enforce any resource limits. We do this first
          * so we fail before mounting anything if limits aren't available. */
@@ -1148,20 +1150,15 @@ impl Layer {
         close(std::io::stdin().as_raw_fd())
             .context(format!("failed to close stdin"))?;
 
-        /* Exit on SIGTERM, with the signal number as our exit status. libc's
-         * exit has the C calling convention a signal handler needs, which
-         * std::process::exit doesn't. */
-        let exit: unsafe extern "C" fn(libc::c_int) -> ! = libc::exit;
+        /* Exit on SIGTERM, with the signal number as our exit status. Unlike
+         * exit, _exit is safe to call from a signal handler, and it has the C
+         * calling convention a handler needs, which std::process::exit
+         * doesn't. */
+        let exit: unsafe extern "C" fn(libc::c_int) -> ! = libc::_exit;
         unsafe {
             libc::signal(libc::SIGTERM, exit as libc::sighandler_t);
         }
 
-        /* Host the namespaces for as long as anything runs in the layer.
-         * Once a second, reap processes orphaned in the layer, and exit once
-         * we're the only process left, which has our supervisor clean up.
-         * A command starting in the layer holds the layer lock until it's
-         * running in our pid namespace, so we only look while holding the
-         * lock, and exit holding it. */
         /* Write our coverage data now, as we may be killed rather than exit */
         #[cfg(feature = "coverage")]
         let dump_coverage = || {
@@ -1191,6 +1188,12 @@ impl Layer {
         #[cfg(feature = "coverage")]
         dump_coverage();
 
+        /* Host the namespaces for as long as anything runs in the layer.
+         * Once a second, reap processes orphaned in the layer, and exit once
+         * we're the only process left, which has our supervisor clean up.
+         * A command starting in the layer holds the layer lock until it's
+         * running in our pid namespace, so we only look while holding the
+         * lock, and exit holding it. */
         loop {
             std::thread::sleep(std::time::Duration::from_secs(1));
             while !matches!(

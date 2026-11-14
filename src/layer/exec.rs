@@ -27,6 +27,8 @@ impl Layer {
         let cwd = std::env::current_dir()
             .context(format!("failed to get current directory"))?;
 
+        /* With host networking, PID 1 is in the host's network namespace, so
+         * CLONE_NEWNET just joins that */
         let ns_flags = libc::CLONE_NEWNS
             | libc::CLONE_NEWPID
             | libc::CLONE_NEWIPC

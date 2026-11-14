@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use crate::{actions::rmdir_recursive, layer::Layer};
 use anyhow::{Context, Result};
 use log::{debug, trace};
@@ -16,7 +14,7 @@ impl Layer {
             debug!("Layer directory does not exist: {}", self.base.display());
         }
 
-        let lock_file = PathBuf::from(format!("{}.lock", self.base.display()));
+        let lock_file = self.lock_path();
         trace!("Cleaning up lock file: {}", lock_file.display());
         std::fs::remove_file(&lock_file).context(format!(
             "failed to remove lock file {}",

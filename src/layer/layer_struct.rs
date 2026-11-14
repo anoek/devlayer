@@ -10,11 +10,20 @@ pub struct Layer {
     pub upper_base: PathBuf,
     pub overlay_base: PathBuf,
     pub data_storage_dir: PathBuf, // storage dir for layer data and nested layers
-    //pub root_suffix: String,
-    //pub root_work: PathBuf,
-    //pub root_upper: PathBuf,
     pub root_overlay: PathBuf,
     pub pid: Pid,
     pub uid: Uid,
     pub gid: Gid,
+}
+
+impl Layer {
+    /// The pid file naming the layer's PID 1, next to the layer's directory
+    pub fn pid_path(&self) -> PathBuf {
+        PathBuf::from(format!("{}.pid", self.base.display()))
+    }
+
+    /// The layer's lock file, next to the layer's directory
+    pub fn lock_path(&self) -> PathBuf {
+        PathBuf::from(format!("{}.lock", self.base.display()))
+    }
 }

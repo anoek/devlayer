@@ -14,13 +14,20 @@ pub struct Lock {
     lock: Flock<File>,
 }
 
+pub fn get_layer_lock_path(
+    layers_storage_dir: &Path,
+    layer_name: &str,
+) -> PathBuf {
+    layers_storage_dir.join(format!("{}.lock", layer_name))
+}
+
 impl Lock {
-    /** Acquire a lock on the layer storage directory. */
+    /** Acquire the lock on a layer, creating its lock file if needed. */
     pub fn layer(
         layers_storage_dir: &Path,
         layer_name: &str,
     ) -> Result<Box<Lock>> {
-        let lock_file = layers_storage_dir.join(format!("{}.lock", layer_name));
+        let lock_file = get_layer_lock_path(layers_storage_dir, layer_name);
         let file = OpenOptions::new()
             .create(true)
             .read(true)
@@ -82,7 +89,7 @@ impl SharedLock {
         layers_storage_dir: &Path,
         layer_name: &str,
     ) -> Result<SharedLock> {
-        let path = layers_storage_dir.join(format!("{}.lock", layer_name));
+        let path = get_layer_lock_path(layers_storage_dir, layer_name);
         let file = File::open(&path).context("Failed to open layer lock")?;
         Ok(SharedLock { path, file })
     }

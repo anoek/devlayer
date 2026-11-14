@@ -5,6 +5,7 @@ use log::{trace, warn};
 use nix::unistd::{Gid, Uid};
 
 use crate::layer::Layer;
+use crate::util::{get_layer_lock_path, get_layer_pid_path};
 use anyhow::Result;
 
 pub fn stop(
@@ -49,16 +50,9 @@ pub fn stop_all(
             let layer_name =
                 filename.to_string_lossy()[..filename.len() - 5].to_string();
 
-            let lock_file =
-                format!("{}/{}.lock", layers_storage_dir.display(), layer_name);
-            let pid_file =
-                format!("{}/{}.pid", layers_storage_dir.display(), layer_name);
-            let storage_dir =
-                format!("{}/{}", layers_storage_dir.display(), layer_name);
-
-            if !Path::new(&lock_file).exists()
-                || !Path::new(&pid_file).exists()
-                || !Path::new(&storage_dir).exists()
+            if !get_layer_lock_path(layers_storage_dir, &layer_name).exists()
+                || !get_layer_pid_path(layers_storage_dir, &layer_name).exists()
+                || !layers_storage_dir.join(&layer_name).exists()
             {
                 continue;
             }
