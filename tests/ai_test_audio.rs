@@ -43,7 +43,11 @@ fn ai_test_audio_on_by_default(mut layer: LayerManager) -> Result<()> {
     assert!(
         layer
             .last_stdout
-            .contains(&format!("{}/pulse", xdg.display()))
+            .contains(&format!("{}/pulse", xdg.display())),
+        "{}/pulse not bound\nstdout: {}\nstderr: {}",
+        xdg.display(),
+        layer.last_stdout,
+        layer.last_stderr
     );
     Ok(())
 }
