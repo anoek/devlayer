@@ -21,7 +21,10 @@ env:
 
 jobs:
     run-coverage:
-        runs-on: ubuntu-latest
+        # The tests run devlayer with `sudo -E`. Ubuntu 26.04's sudo-rs
+        # ignores -E, so test environment variables (TEST_* hooks,
+        # LLVM_PROFILE_FILE) wouldn't reach devlayer.
+        runs-on: ubuntu-24.04
         timeout-minutes: 10
 
         steps:
