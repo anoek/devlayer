@@ -192,6 +192,7 @@
         "resgid",
         "resolv",
         "resuid",
+        "rfind",
         "rgid",
         "rmdirs",
         "rstest",

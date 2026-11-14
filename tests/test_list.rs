@@ -1,6 +1,6 @@
 mod fixtures;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use fixtures::*;
@@ -67,8 +67,9 @@ fn test_list_ignore_bad_pid_file(mut layer: LayerManager) -> Result<()> {
     assert!(layer.run(&["list"]).is_ok());
     // still expected to be listed
     assert!(layer.all_stdout.contains("coverage_test_bad_pid_file"));
+    // and listing it cleans up the bad pid file
+    assert!(!Path::new(&pid_file_name).exists());
 
-    std::fs::remove_file(&pid_file_name)?;
     std::fs::remove_file(&lock_file_name)?;
 
     Ok(())
@@ -97,7 +98,11 @@ fn test_list_stale_pid_file(mut layer: LayerManager) -> Result<()> {
     let pid_file = std::fs::File::open(&pid_file_name)?;
     let pid_file_content = std::io::read_to_string(pid_file)?;
     println!("pid_file_content: {}", pid_file_content);
-    assert!(pid_file_content.parse::<i32>().is_ok());
+    let pid = pid_file_content
+        .split_whitespace()
+        .next()
+        .unwrap_or_default();
+    assert!(pid.parse::<i32>().is_ok());
 
     assert!(layer.run(&["list", &layer.name.clone()]).is_ok());
     eprintln!(">>>> {} <<<<", layer.last_stdout);

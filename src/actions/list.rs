@@ -2,13 +2,12 @@ use anyhow::Result;
 use colored::*;
 use fast_glob::glob_match;
 use log::trace;
-use nix::{sys::signal::kill, unistd::Pid};
 use serde_json::Value;
 use std::path::Path;
 
 use crate::{
     outln,
-    util::{get_layer_pid_path, set_json_output},
+    util::{get_running_layer_pid, set_json_output},
 };
 
 pub fn list(layers_storage_dir: &Path, patterns: &[String]) -> Result<()> {
@@ -72,24 +71,10 @@ pub fn get_layers(
                     .iter()
                     .any(|pattern| glob_match(pattern, &layer_name))
             {
-                let pid_file =
-                    get_layer_pid_path(layers_storage_dir, &layer_name);
-                if pid_file.exists() {
-                    let pid = std::fs::read_to_string(pid_file)?;
-
-                    match pid.parse::<i32>() {
-                        Ok(pid) => {
-                            let pid = Pid::from_raw(pid);
-                            if kill(pid, None).is_ok() {
-                                running_layers.push(layer_name);
-                            } else {
-                                stopped_layers.push(layer_name);
-                            }
-                        }
-                        Err(_) => {
-                            stopped_layers.push(layer_name);
-                        }
-                    }
+                if get_running_layer_pid(layers_storage_dir, &layer_name)
+                    .is_some()
+                {
+                    running_layers.push(layer_name);
                 } else {
                     stopped_layers.push(layer_name);
                 }

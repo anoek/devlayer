@@ -340,7 +340,8 @@ fn ai_test_limits_stale_cgroup(mut layer: LayerManager) -> Result<()> {
     layer.run(&["config", "layer_dir"])?;
     let pid_file = format!("{}.pid", layer.last_stdout.trim());
     let pid = fs::read_to_string(&pid_file)?;
-    let status = fs::read_to_string(format!("/proc/{}/status", pid.trim()))?;
+    let pid = pid.split_whitespace().next().unwrap_or_default();
+    let status = fs::read_to_string(format!("/proc/{}/status", pid))?;
     let supervisor = status
         .lines()
         .find_map(|line| line.strip_prefix("PPid:"))

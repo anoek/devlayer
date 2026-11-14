@@ -7,13 +7,13 @@ use crate::layer::{Layer, LayerOrigin};
 #[cfg(feature = "coverage")]
 use crate::util::CLONE_FS;
 use crate::util::get_layer_pid_path;
-use crate::util::get_running_layer_pid;
 use crate::util::{
     CLONE_INTO_CGROUP, CLONE_NEWCGROUP, CLONE_NEWIPC, CLONE_NEWNET,
     CLONE_NEWNS, CLONE_NEWPID, CLONE_NEWUTS, Clone3Args,
     check_path_for_mount_option_compatibility, clone3, mkdir, mount,
 };
-use crate::util::{Lock, SharedLock};
+use crate::util::{Lock, SharedLock, write_no_follow};
+use crate::util::{get_running_layer_pid, layer_pid_file_contents};
 use anyhow::Context;
 use anyhow::{Result, anyhow};
 use log::{error, trace};
@@ -22,6 +22,7 @@ use nix::sys::stat::fchmodat;
 use nix::{
     mount::MsFlags,
     mount::{MntFlags, umount2},
+    sys::signal::Signal,
     sys::stat::{Mode, SFlag, makedev, mknod},
     sys::wait::{WaitPidFlag, WaitStatus, waitpid},
     unistd::{
@@ -277,7 +278,7 @@ impl Layer {
     fn start_layer(
         &self,
         config: &Config,
-        pid_file: &PathBuf,
+        pid_file: &Path,
         overlay_mounts: &Vec<MountHash>,
         cgroup: Option<&OwnedFd>,
     ) -> Result<Pid> {
@@ -337,7 +338,7 @@ impl Layer {
     fn start_pid1(
         &self,
         config: &Config,
-        pid_file: &PathBuf,
+        pid_file: &Path,
         overlay_mounts: &Vec<MountHash>,
         cgroup: Option<&OwnedFd>,
     ) -> Result<(Pid, SharedLock)> {
@@ -388,11 +389,17 @@ impl Layer {
             // We are the parent process
             drop(write_fd);
 
-            // write pid to pid file
-            std::fs::write(pid_file, pid.to_string()).context(format!(
-                "failed to write pid to pid file: {}",
-                pid_file.display()
-            ))?;
+            // write pid to pid file, or else don't leave PID 1 behind
+            if let Err(e) =
+                write_no_follow(pid_file, layer_pid_file_contents(pid))
+            {
+                let _ = nix::sys::signal::kill(pid, Signal::SIGKILL);
+                let _ = waitpid(pid, None);
+                return Err(e).context(format!(
+                    "failed to write pid to pid file: {}",
+                    pid_file.display()
+                ));
+            }
 
             // Wait for the child process to finish mounting procfs and doing whatever
             // setup stuff it needs to do. Once done, it sends a byte over the pipe, that's

@@ -1,6 +1,6 @@
 use std::fs::{File, OpenOptions};
 use std::os::fd::{AsRawFd, RawFd};
-use std::os::unix::fs::MetadataExt;
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
 use log::trace;
@@ -33,6 +33,7 @@ impl Lock {
             .read(true)
             .write(true)
             .truncate(false)
+            .custom_flags(libc::O_NOFOLLOW)
             .open(&lock_file)
             .map_err(|e| {
                 anyhow!(
@@ -47,7 +48,7 @@ impl Lock {
     /// Whether our lock file is still the one at its path
     fn is_current(&self) -> bool {
         let ours = self.lock.metadata();
-        let current = std::fs::metadata(&self.path);
+        let current = std::fs::symlink_metadata(&self.path);
         ours.is_ok_and(|ours| {
             current.is_ok_and(|current| {
                 ours.dev() == current.dev() && ours.ino() == current.ino()
@@ -90,7 +91,11 @@ impl SharedLock {
         layer_name: &str,
     ) -> Result<SharedLock> {
         let path = get_layer_lock_path(layers_storage_dir, layer_name);
-        let file = File::open(&path).context("Failed to open layer lock")?;
+        let file = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&path)
+            .context("Failed to open layer lock")?;
         Ok(SharedLock { path, file })
     }
 

@@ -17,7 +17,7 @@ fn pid_file(layer: &LayerManager) -> Result<PathBuf> {
 /// PID 1 of the layer, if its pid file names a live process
 fn layer_pid(layer: &LayerManager) -> Option<i32> {
     let pid = std::fs::read_to_string(pid_file(layer).ok()?).ok()?;
-    let pid = pid.trim().parse::<i32>().ok()?;
+    let pid = pid.split_whitespace().next()?.parse::<i32>().ok()?;
     PathBuf::from(format!("/proc/{}", pid))
         .exists()
         .then_some(pid)
@@ -199,7 +199,8 @@ fn ai_test_supervisor_leaves_restarted_layer(
     layer.hold()?;
     other.hold()?;
     let pid = layer_pid(&layer).expect("layer should be running");
-    let other_pid = layer_pid(&other).expect("other layer should be running");
+    assert!(layer_pid(&other).is_some(), "other layer should be running");
+    let other_pid_file = std::fs::read_to_string(pid_file(&other)?)?;
     let pid_file = pid_file(&layer)?;
     let lock_file = format!("{}.lock", layer.dir()?.display());
 
@@ -219,17 +220,14 @@ fn ai_test_supervisor_leaves_restarted_layer(
         .args([
             "sh",
             "-c",
-            &format!("printf %s {} > {}", other_pid, pid_file.display()),
+            &format!("printf %s '{}' > {}", other_pid_file, pid_file.display()),
         ])
         .status()?;
     drop(lock);
 
     std::thread::sleep(Duration::from_secs(2));
     assert!(has_mounts(&layer)?);
-    assert_eq!(
-        std::fs::read_to_string(&pid_file)?.trim(),
-        other_pid.to_string()
-    );
+    assert_eq!(std::fs::read_to_string(&pid_file)?, other_pid_file);
 
     // Don't let stopping this layer stop the other one
     Command::new("sudo")

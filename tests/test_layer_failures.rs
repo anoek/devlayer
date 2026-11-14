@@ -43,7 +43,11 @@ fn test_recover_from_bad_pid_file() -> Result<()> {
     let pid_file = std::fs::File::open(&pid_file_name)?;
     let pid_file_content = std::io::read_to_string(pid_file)?;
     println!("pid_file: {} contains {}", pid_file_name, pid_file_content);
-    assert!(pid_file_content.parse::<i32>().is_ok());
+    let pid = pid_file_content
+        .split_whitespace()
+        .next()
+        .unwrap_or_default();
+    assert!(pid.parse::<i32>().is_ok());
     Ok(())
 }
 

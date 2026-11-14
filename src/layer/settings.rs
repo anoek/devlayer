@@ -1,5 +1,6 @@
 use crate::config::{BindMount, Config};
 use crate::layer::mount_overlays::MountHash;
+use crate::util::write_no_follow;
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -43,7 +44,7 @@ impl LayerOrigin {
     pub fn save(&self, layer_dir: &Path) -> Result<()> {
         let json = serde_json::to_string_pretty(self)
             .context("Failed to serialize layer origin to JSON")?;
-        std::fs::write(Self::path(layer_dir), json).context(format!(
+        write_no_follow(&Self::path(layer_dir), json).context(format!(
             "Failed to write {}",
             Self::path(layer_dir).display()
         ))
@@ -78,7 +79,7 @@ impl LayerSettings {
     pub fn save_to_file(&self, path: &Path) -> Result<()> {
         let settings_json = serde_json::to_string_pretty(self)
             .context("Failed to serialize layer settings to JSON")?;
-        std::fs::write(path, settings_json).context(format!(
+        write_no_follow(path, settings_json).context(format!(
             "Failed to write settings.json to {}",
             path.display()
         ))?;
