@@ -18,6 +18,7 @@ fn create_test_config() -> ::devlayer::config::Config {
     ::devlayer::config::Config {
         log_level: log::LevelFilter::Info,
         name: "test_layer".to_string(),
+        new_layer: false,
         storage_dir: PathBuf::from("/tmp/test_storage"),
         layer_dir: PathBuf::from("/tmp/test_layer"),
         upper_cwd: PathBuf::from("/tmp/test_upper"),

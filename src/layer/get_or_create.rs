@@ -1,11 +1,11 @@
 use super::cgroup::remove_cgroup;
 use super::mount_overlays::MountHash;
 use super::supervisor;
+use crate::config::resolve::generate_timestamp_name;
 use crate::config::{BindMount, BindMountOptions, Config, Network};
 use crate::layer::{Layer, LayerOrigin};
 #[cfg(feature = "coverage")]
 use crate::util::CLONE_FS;
-use crate::util::Lock;
 use crate::util::get_layer_pid_path;
 use crate::util::get_running_layer_pid;
 use crate::util::{
@@ -13,6 +13,7 @@ use crate::util::{
     CLONE_NEWNS, CLONE_NEWPID, CLONE_NEWUTS, Clone3Args,
     check_path_for_mount_option_compatibility, clone3, mkdir, mount,
 };
+use crate::util::{Lock, SharedLock};
 use anyhow::Context;
 use anyhow::{Result, anyhow};
 use log::{error, trace};
@@ -105,21 +106,42 @@ impl Layer {
         Ok((None, lock))
     }
 
-    pub fn get_or_create(config: &Config, uid: Uid, gid: Gid) -> Result<Layer> {
+    /**
+     * Returns the layer, starting it if it isn't running, along with the
+     * layer lock, which is held until the caller drops it.
+     */
+    pub fn get_or_create(
+        config: &Config,
+        uid: Uid,
+        gid: Gid,
+    ) -> Result<(Layer, Box<Lock>)> {
         let storage_dir = &config.storage_dir;
-        let layer_name = &config.name;
         /* Ensure that the storage directory exists */
         mkdir(storage_dir, uid, gid).context(format!(
             "failed to create storage directory: {}",
             storage_dir.display()
         ))?;
 
-        /* First lock so we don't have multiple processes trying to get_or_create at the same time */
-        let lock = Lock::layer(storage_dir, layer_name)
-            .context(format!("failed to lock layer: {}", layer_name))?;
+        /* First lock so we don't have multiple processes trying to
+         * get_or_create at the same time. A name generated for a new layer
+         * is ours once we hold its lock and no layer by that name exists,
+         * since we create the layer's directory before letting go of the
+         * lock. If one does exist, another launch generated the same name
+         * first, so we generate another. */
+        let mut layer_name = config.name.clone();
+        let lock = loop {
+            let lock = Lock::layer(storage_dir, &layer_name)
+                .context(format!("failed to lock layer: {}", layer_name))?;
+            if !config.new_layer || !storage_dir.join(&layer_name).exists() {
+                break lock;
+            }
+            trace!("Layer '{}' was created meanwhile", layer_name);
+            layer_name = generate_timestamp_name(storage_dir);
+        };
+        let layer_name = &layer_name;
 
         /* If we have an existing layer, return it */
-        let (layer, _lock) =
+        let (layer, lock) =
             Layer::get(storage_dir, layer_name, uid, gid, Some(lock))?;
 
         if let Some(layer) = layer {
@@ -158,7 +180,7 @@ impl Layer {
                     }
                 }
             }
-            return Ok(layer);
+            return Ok((layer, lock));
         }
 
         /*
@@ -234,7 +256,7 @@ impl Layer {
             .save(&layer.base)?;
         }
 
-        Ok(layer)
+        Ok((layer, lock))
     }
 
     /**
@@ -280,8 +302,8 @@ impl Layer {
                         error!("Failed to start layer: {:#}", e);
                         e
                     });
-                let message = match pid1 {
-                    Ok(pid) => {
+                let message = match &pid1 {
+                    Ok((pid, _)) => {
                         let mut message = vec![0];
                         message.extend(pid.as_raw().to_le_bytes());
                         message
@@ -290,9 +312,9 @@ impl Layer {
                 };
                 let _ = nix::unistd::write(&write_fd, &message);
                 match pid1 {
-                    Ok(pid) => {
-                        supervisor::detach();
-                        supervisor::supervise(self, pid, cgroup.is_some())
+                    Ok((pid, lock)) => {
+                        supervisor::detach(&lock);
+                        supervisor::supervise(self, pid, cgroup.is_some(), lock)
                     }
                     Err(_) => std::process::exit(1),
                 }
@@ -302,7 +324,8 @@ impl Layer {
 
     /**
      * Runs in the supervisor: starts PID 1, records its pid, and waits until
-     * it reports that the layer is set up.
+     * it reports that the layer is set up. Returns PID 1's pid and the
+     * handle on the layer lock that we share with it.
      */
     fn start_pid1(
         &self,
@@ -310,8 +333,10 @@ impl Layer {
         pid_file: &PathBuf,
         overlay_mounts: &Vec<MountHash>,
         cgroup: Option<&OwnedFd>,
-    ) -> Result<Pid> {
+    ) -> Result<(Pid, SharedLock)> {
         supervisor::become_supervisor()?;
+
+        let lock = SharedLock::open(&config.storage_dir, &self.name)?;
 
         // create a pipe between ourselves and the main layer process so the main layer process can
         // let us know when it's done setting up the namespaces
@@ -375,7 +400,7 @@ impl Layer {
                 return Err(anyhow!("Failed to setup layer"));
             }
 
-            Ok(pid)
+            Ok((pid, lock))
         } else {
             // We are the child process. We should never return from this branch.
 
@@ -385,7 +410,7 @@ impl Layer {
 
             // Normal operation is that this doesn't return.
             let _ = self
-                .setup_layer_and_wait(config, &write_fd, overlay_mounts)
+                .setup_layer_and_wait(config, &write_fd, overlay_mounts, &lock)
                 .map_err(|e| {
                     error!("Failed to setup layer: {}", e);
                     e
@@ -404,8 +429,16 @@ impl Layer {
         config: &Config,
         write_fd: &OwnedFd,
         mounts: &Vec<MountHash>,
+        lock: &SharedLock,
     ) -> Result<()> {
         trace!("Setting up layer root process");
+
+        /* Of the file descriptors we inherited, keep only stdio, the pipe to
+         * our supervisor and our handle on the layer lock. Notably not the
+         * caller's lock on the layer: if the caller died holding it, the
+         * lock would stay held for as long as we keep it open, and nothing
+         * could get at the layer, nor could we shut it down. */
+        supervisor::close_fds_except(&[write_fd.as_raw_fd(), lock.as_raw_fd()]);
 
         /* Normalize credentials and dumpable state for pidfd-based setns().
          *
@@ -1120,7 +1153,10 @@ impl Layer {
 
         /* Host the namespaces for as long as anything runs in the layer.
          * Once a second, reap processes orphaned in the layer, and exit once
-         * we're the only process left, which has our supervisor clean up. */
+         * we're the only process left, which has our supervisor clean up.
+         * A command starting in the layer holds the layer lock until it's
+         * running in our pid namespace, so we only look while holding the
+         * lock, and exit holding it. */
         /* Write our coverage data now, as we may be killed rather than exit */
         #[cfg(feature = "coverage")]
         let dump_coverage = || {
@@ -1157,11 +1193,17 @@ impl Layer {
                 Ok(WaitStatus::StillAlive) | Err(_)
             ) {}
 
-            if only_process_in_layer() {
-                trace!("Nothing is running in layer '{}', exiting", self.name);
-                #[cfg(feature = "coverage")]
-                dump_coverage();
-                std::process::exit(0);
+            if lock.try_lock() {
+                if only_process_in_layer() {
+                    trace!(
+                        "Nothing is running in layer '{}', exiting",
+                        self.name
+                    );
+                    #[cfg(feature = "coverage")]
+                    dump_coverage();
+                    std::process::exit(0);
+                }
+                lock.unlock();
             }
         }
     }

@@ -181,10 +181,10 @@ pub fn main() -> Result<()> {
         None => vec![std::env::var("SHELL").unwrap_or("sh".to_string())],
     };
 
-    let layer =
+    let (layer, lock) =
         Layer::get_or_create(&config, uid_gid_home.uid, uid_gid_home.gid)
             .context("Getting or creating layer")?;
 
     // On success, we never actually return from this call
-    layer.exec(&layered_command)
+    layer.exec(&layered_command, lock)
 }

@@ -72,6 +72,9 @@ pub struct PartialConfig {
 pub struct Config {
     pub log_level: log::LevelFilter,
     pub name: String,
+    /// Whether a new layer was asked for, with `name` generated for it,
+    /// rather than a layer to join
+    pub new_layer: bool,
     pub storage_dir: PathBuf,
     pub layer_dir: PathBuf,
     pub upper_cwd: PathBuf,

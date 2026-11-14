@@ -1,6 +1,6 @@
 #![allow(static_mut_refs)]
 use crate::layer::Layer;
-use crate::util::drop_privileges;
+use crate::util::{Lock, drop_privileges};
 use anyhow::{Context, Result, anyhow};
 use libc::syscall;
 use log::trace;
@@ -20,9 +20,10 @@ unsafe extern "C" {
 impl Layer {
     /**
      * Exec within the provided layer. This function never returns on
-     * success.
+     * success. `lock` is the layer lock, which keeps PID 1 from shutting the
+     * layer down until our command is running in it.
      */
-    pub fn exec(&self, command: &[String]) -> Result<()> {
+    pub fn exec(&self, command: &[String], lock: Box<Lock>) -> Result<()> {
         let cwd = std::env::current_dir()
             .context(format!("failed to get current directory"))?;
 
@@ -120,8 +121,21 @@ impl Layer {
             );
         }
 
+        /* Stands in for a command that's slow to start, e.g. on a loaded
+         * machine */
+        #[cfg(feature = "coverage")]
+        if let Some(ms) = std::env::var("TEST_DELAY_FORK")
+            .ok()
+            .and_then(|ms| ms.parse().ok())
+        {
+            std::thread::sleep(std::time::Duration::from_millis(ms));
+        }
+
         /* We need to fork to properly enter the PID namespace */
         let result = unsafe { fork() }.context(format!("failed to fork"))?;
+        /* Our command is in the layer's PID namespace now, where PID 1 sees
+         * it */
+        drop(lock);
         match result {
             ForkResult::Parent { child } => {
                 /* Parent process */

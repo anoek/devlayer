@@ -237,3 +237,44 @@ fn ai_test_supervisor_leaves_restarted_layer(
         .status()?;
     Ok(())
 }
+
+/// A command that's slow to start in a new layer still runs: the layer
+/// doesn't shut down for lack of anything running in it while the command
+/// is on its way
+#[rstest]
+fn ai_test_layer_waits_for_starting_command(
+    mut layer: LayerManager,
+) -> Result<()> {
+    // By then PID 1 has looked for anything running in the layer
+    layer.run_with_env(
+        &["sh", "-c", "echo started"],
+        "TEST_DELAY_FORK",
+        "1500",
+    )?;
+    assert_eq!(layer.last_stdout.trim(), "started");
+    Ok(())
+}
+
+/// A launch killed before its command starts doesn't keep the layer from
+/// shutting down
+#[rstest]
+fn ai_test_killed_launch_lets_layer_shut_down(
+    layer: LayerManager,
+) -> Result<()> {
+    let pid_file = pid_file(&layer)?;
+    // The setuid binary rather than sudo, so we kill the launch itself
+    let mut launch = Command::new(format!("{}-setuid", layer.devlayer_bin))
+        .args([
+            &format!("--join={}", layer.name),
+            "--no-config",
+            "--no-bind-cwd",
+            "true",
+        ])
+        .env("TEST_DELAY_FORK", "60000")
+        .spawn()?;
+    assert!(wait_until(Duration::from_secs(5), || pid_file.exists()));
+    launch.kill()?;
+    launch.wait()?;
+    assert!(wait_until(Duration::from_secs(5), || !pid_file.exists()));
+    Ok(())
+}

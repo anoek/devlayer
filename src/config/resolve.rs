@@ -236,13 +236,14 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     } else {
         (default_selection(cli.action.as_ref()), "")
     };
+    let new_layer = selection == LayerSelection::New;
     let name = match selection {
         LayerSelection::Join(name) => name,
-        LayerSelection::New => generate_timestamp_name(
-            &partial_config.storage_dir,
+        LayerSelection::New => generate_timestamp_name(&resolve_storage_dir(
+            partial_config.storage_dir.clone(),
             uid_gid_home.uid,
             uid_gid_home.gid,
-        )?,
+        )?),
         LayerSelection::Last => find_last_layer(
             &resolve_storage_dir(
                 partial_config.storage_dir.clone(),
@@ -251,21 +252,15 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
             )?,
             &cwd,
         )?,
-        LayerSelection::LastOrNew => match find_last_layer(
-            &resolve_storage_dir(
+        LayerSelection::LastOrNew => {
+            let storage_dir = resolve_storage_dir(
                 partial_config.storage_dir.clone(),
                 uid_gid_home.uid,
                 uid_gid_home.gid,
-            )?,
-            &cwd,
-        ) {
-            Ok(name) => name,
-            Err(_) => generate_timestamp_name(
-                &partial_config.storage_dir,
-                uid_gid_home.uid,
-                uid_gid_home.gid,
-            )?,
-        },
+            )?;
+            find_last_layer(&storage_dir, &cwd)
+                .unwrap_or_else(|_| generate_timestamp_name(&storage_dir))
+        }
     };
     if !explicit.is_empty() {
         sources.insert("name".into(), explicit.into());
@@ -462,6 +457,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
 
     let config = Config {
         name,
+        new_layer,
         net,
         storage_dir,
         layer_dir,
@@ -913,13 +909,9 @@ fn validate_config(config: &Config) -> Result<()> {
     Ok(())
 }
 
-fn generate_timestamp_name(
-    storage_dir: &Option<String>,
-    uid: Uid,
-    gid: Gid,
-) -> Result<String> {
-    let storage_dir = resolve_storage_dir(storage_dir.clone(), uid, gid)?;
-
+/// Generates an `ephemeral_*` name for a new layer that isn't taken yet.
+/// Generating it doesn't reserve it; `Layer::get_or_create` does that.
+pub(crate) fn generate_timestamp_name(storage_dir: &Path) -> String {
     #[cfg(feature = "coverage")]
     let mut iter = 0;
 
@@ -931,7 +923,7 @@ fn generate_timestamp_name(
         // Check if this name already exists
         let layer_path = storage_dir.join(&base_name);
         if !layer_path.exists() {
-            return Ok(base_name);
+            return base_name;
         }
 
         // If it exists, try with millisecond precision
@@ -948,7 +940,7 @@ fn generate_timestamp_name(
 
         let layer_path_ms = storage_dir.join(&name_with_ms);
         if !layer_path_ms.exists() {
-            return Ok(name_with_ms);
+            return name_with_ms;
         }
 
         // If even that exists, sleep for a millisecond and try again
@@ -1217,6 +1209,7 @@ mod tests {
     fn test_validate_config() {
         let mut config = Config {
             name: "test-layer".to_string(),
+            new_layer: false,
             storage_dir: PathBuf::from("/tmp/test"),
             layer_dir: PathBuf::from("/tmp/test"),
             upper_cwd: PathBuf::from("/tmp/test"),
