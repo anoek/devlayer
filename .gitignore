@@ -12,3 +12,4 @@ dev_devlayer.sh
 callgrind.out.*
 cachegrind.out.*
 perf.data*
+superpowers/
