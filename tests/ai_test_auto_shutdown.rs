@@ -127,7 +127,10 @@ fn ai_test_idle_layer_shuts_down(mut layer: LayerManager) -> Result<()> {
     assert!(wait_until(Duration::from_secs(5), || {
         !pid_file(&layer).unwrap().exists()
     }));
-    assert!(!has_mounts(&layer)?);
+    // The supervisor removes the pid file before it unmounts the layer
+    assert!(wait_until(Duration::from_secs(5), || {
+        !has_mounts(&layer).unwrap()
+    }));
     assert!(!file.exists());
 
     layer.run(&["list"])?;
