@@ -718,17 +718,18 @@ fn test_env_flag_includes_ignored(mut layer: LayerManager) -> Result<()> {
     // This one needs to stay as Command::new because we need to pass --ignored directly
     // and test that it overrides the env var
     layer.set_ignored(false); // Disable automatic --ignored
-    let output = Command::new("sudo")
-        .env("DEVLAYER_IGNORED", "false")
-        .args(["-E", &layer.devlayer_bin])
-        .args([
-            "-v",
-            "--ignored",
-            &format!("--join={}", &layer.name),
-            "status",
-            &test_dir,
-        ])
-        .output()?;
+    let output = as_root(
+        Command::new(&layer.devlayer_bin)
+            .env("DEVLAYER_IGNORED", "false")
+            .args([
+                "-v",
+                "--ignored",
+                &format!("--join={}", &layer.name),
+                "status",
+                &test_dir,
+            ]),
+    )
+    .output()?;
     assert!(output.status.success());
     // Both files should be reported because cli takes precedence over env var
     let stdout = String::from_utf8_lossy(&output.stdout);

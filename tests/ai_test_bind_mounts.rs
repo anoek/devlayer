@@ -502,17 +502,17 @@ fn test_bind_mount_empty_destination_with_sudo() -> Result<()> {
     fs::create_dir_all(&tmp)?;
 
     // Run directly with sudo to ensure proper handling of bind mount paths
-    let output = std::process::Command::new("sudo")
-        .arg("-E")
-        .arg(env!("CARGO_BIN_EXE_devlayer"))
-        .arg("--join")
-        .arg(&unique_name)
-        .arg("--bind")
-        .arg(format!("{}:", tmp)) // Empty destination after colon
-        .arg("--")
-        .arg("echo")
-        .arg("test")
-        .output()?;
+    let output = as_root(
+        std::process::Command::new(env!("CARGO_BIN_EXE_devlayer"))
+            .arg("--join")
+            .arg(&unique_name)
+            .arg("--bind")
+            .arg(format!("{}:", tmp)) // Empty destination after colon
+            .arg("--")
+            .arg("echo")
+            .arg("test"),
+    )
+    .output()?;
 
     assert!(
         output.status.success(),

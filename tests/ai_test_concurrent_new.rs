@@ -12,20 +12,17 @@ fn ai_test_concurrent_new_launches_get_own_layers() -> Result<()> {
     let bin = get_devlayer_bin();
     let launches = (0..8)
         .map(|_| {
-            Command::new("sudo")
-                .args([
-                    "-E",
-                    &bin,
-                    "--no-config",
-                    "--no-bind-cwd",
-                    "--new",
-                    "sh",
-                    "-c",
-                    "echo $DEVLAYER",
-                ])
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
+            as_root(Command::new(&bin).args([
+                "--no-config",
+                "--no-bind-cwd",
+                "--new",
+                "sh",
+                "-c",
+                "echo $DEVLAYER",
+            ]))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
         })
         .collect::<std::io::Result<Vec<_>>>()?;
     let outputs = launches

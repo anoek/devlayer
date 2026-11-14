@@ -2,6 +2,8 @@ use anyhow::Result;
 use log::{error, warn};
 use rand::Rng;
 use rstest::*;
+use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::path::Path;
 use std::process::Child;
 use std::{path::PathBuf, process::Command};
@@ -54,6 +56,37 @@ pub fn get_devlayer_bin() -> String {
     let absolute_path = path.canonicalize().unwrap_or_else(|_| path.clone());
     println!("Path: {}", absolute_path.to_string_lossy());
     absolute_path.to_string_lossy().to_string()
+}
+
+/// A command that runs `cmd` as root with sudo, with our environment and
+/// the variables set on `cmd`, as `sudo -E` would. sudo-rs, the default sudo
+/// on Ubuntu 26.04, ignores -E, so the variables are passed through `env`.
+pub fn as_root(cmd: &Command) -> Command {
+    let mut vars: BTreeMap<OsString, OsString> = std::env::vars_os().collect();
+    let mut sudo = Command::new("sudo");
+    sudo.arg("env");
+    for (key, value) in cmd.get_envs() {
+        match value {
+            Some(value) => {
+                vars.insert(key.to_os_string(), value.to_os_string());
+            }
+            None => {
+                vars.remove(key);
+                sudo.arg("-u").arg(key);
+            }
+        }
+    }
+    for (key, value) in vars {
+        let mut var = key;
+        var.push("=");
+        var.push(value);
+        sudo.arg(var);
+    }
+    sudo.arg(cmd.get_program()).args(cmd.get_args());
+    if let Some(dir) = cmd.get_current_dir() {
+        sudo.current_dir(dir);
+    }
+    sudo
 }
 
 pub struct LayerManager {
@@ -122,6 +155,11 @@ impl LayerManager {
         }
     }
 
+    /// `cmd` run as root, unless no_sudo is set
+    fn privileged(&self, cmd: Command) -> Command {
+        if self.no_sudo { cmd } else { as_root(&cmd) }
+    }
+
     /// Applies the configured working directory to a command. A relative
     /// LLVM_PROFILE_FILE is made absolute so coverage data from commands run
     /// elsewhere still lands in this repository.
@@ -151,17 +189,13 @@ impl LayerManager {
 
     #[allow(dead_code)]
     pub fn dir(&self) -> Result<PathBuf> {
-        let mut cmd = Command::new("sudo");
-        cmd.args(["-E", &self.devlayer_bin]);
-
-        if self.no_sudo {
-            cmd = Command::new(&self.devlayer_bin);
-        }
+        let mut cmd = Command::new(&self.devlayer_bin);
 
         cmd.args([format!("--join={}", &self.name)]);
         self.add_no_bind_cwd(&mut cmd, &[]);
         cmd.args(["config", "layer_dir"]);
         self.apply_cwd(&mut cmd);
+        let mut cmd = self.privileged(cmd);
         let output = cmd.output()?;
         let base = String::from_utf8_lossy(&output.stdout).to_string();
         let base = base.trim();
@@ -197,12 +231,7 @@ impl LayerManager {
         use std::io::Write;
         use std::process::Stdio;
 
-        let mut cmd = Command::new("sudo");
-        cmd.args(["-E", &self.devlayer_bin]);
-
-        if self.no_sudo {
-            cmd = Command::new(&self.devlayer_bin);
-        }
+        let mut cmd = Command::new(&self.devlayer_bin);
 
         if !self.no_default_options
             && !args.iter().any(|arg| {
@@ -226,11 +255,6 @@ impl LayerManager {
         self.add_no_bind_cwd(&mut cmd, args);
         cmd.args(args);
 
-        // Set up stdin
-        cmd.stdin(Stdio::piped());
-        cmd.stdout(Stdio::piped());
-        cmd.stderr(Stdio::piped());
-
         println!(
             "Running command with stdin: {} {}",
             cmd.get_program().to_string_lossy(),
@@ -241,6 +265,10 @@ impl LayerManager {
         );
 
         self.apply_cwd(&mut cmd);
+        let mut cmd = self.privileged(cmd);
+        cmd.stdin(Stdio::piped());
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
         let mut child = cmd
             .spawn()
             .map_err(|e| anyhow::anyhow!("Failed to spawn command: {:?}", e))?;
@@ -288,15 +316,10 @@ impl LayerManager {
         env_key: &str,
         env_value: &str,
     ) -> Result<std::process::Output> {
-        let mut cmd = Command::new("sudo");
+        let mut cmd = Command::new(&self.devlayer_bin);
         if !env_key.is_empty() {
             println!("Setting env var: {}={}", env_key, env_value);
             cmd.env(env_key, env_value);
-        }
-        cmd.args(["-E", &self.devlayer_bin]);
-
-        if self.no_sudo {
-            cmd = Command::new(&self.devlayer_bin);
         }
 
         if !self.no_default_options
@@ -327,6 +350,7 @@ impl LayerManager {
                 .join(" ")
         );
         self.apply_cwd(&mut cmd);
+        let mut cmd = self.privileged(cmd);
         match cmd.output() {
             Ok(output) => {
                 self.last_stdout =
@@ -378,12 +402,7 @@ impl LayerManager {
 
     #[allow(dead_code)]
     pub fn run_in_background(&mut self, args: &[&str]) -> Result<Child> {
-        let mut cmd = Command::new("sudo");
-        cmd.args(["-E", &self.devlayer_bin]);
-
-        if self.no_sudo {
-            cmd = Command::new(&self.devlayer_bin);
-        }
+        let mut cmd = Command::new(&self.devlayer_bin);
 
         if !self.no_default_options {
             cmd.args([format!("--join={}", &self.name)]);
@@ -401,6 +420,7 @@ impl LayerManager {
         );
 
         self.apply_cwd(&mut cmd);
+        let mut cmd = self.privileged(cmd);
         Ok(cmd.spawn()?)
     }
 

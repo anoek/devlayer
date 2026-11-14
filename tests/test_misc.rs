@@ -23,9 +23,10 @@ fn test_program_runs_with_no_args(mut layer: LayerManager) -> Result<()> {
 fn test_weird_sudo_env_variables(layer: LayerManager) -> Result<()> {
     let devlayer_bin = layer.devlayer_bin.clone();
 
-    let mut cmd = Command::new("sudo");
-    cmd.args(["-E", "SUDO_UID=nan", &devlayer_bin]);
+    let mut cmd = Command::new(&devlayer_bin);
+    cmd.env("SUDO_UID", "nan");
     cmd.args([format!("--join={}", &layer.name)]);
+    let mut cmd = as_root(&cmd);
     let output = cmd.output()?;
     assert!(output.status.code().unwrap() != 0);
     assert!(
@@ -33,9 +34,10 @@ fn test_weird_sudo_env_variables(layer: LayerManager) -> Result<()> {
             .contains("Failed to parse SUDO_UID")
     );
 
-    let mut cmd = Command::new("sudo");
-    cmd.args(["-E", "SUDO_GID=nan", &devlayer_bin]);
+    let mut cmd = Command::new(&devlayer_bin);
+    cmd.env("SUDO_GID", "nan");
     cmd.args([format!("--join={}", &layer.name)]);
+    let mut cmd = as_root(&cmd);
     let output = cmd.output()?;
     assert!(output.status.code().unwrap() != 0);
     assert!(
@@ -43,9 +45,10 @@ fn test_weird_sudo_env_variables(layer: LayerManager) -> Result<()> {
             .contains("Failed to parse SUDO_GID")
     );
 
-    let mut cmd = Command::new("sudo");
-    cmd.args(["-E", "SUDO_HOME=", &devlayer_bin]);
+    let mut cmd = Command::new(&devlayer_bin);
+    cmd.env("SUDO_HOME", "");
     cmd.args([format!("--join={}", &layer.name)]);
+    let mut cmd = as_root(&cmd);
     let output = cmd.output()?;
     assert!(output.status.code().unwrap() != 0);
     assert!(
@@ -53,9 +56,10 @@ fn test_weird_sudo_env_variables(layer: LayerManager) -> Result<()> {
             .contains("Home directory is not absolute")
     );
 
-    let mut cmd = Command::new("sudo");
-    cmd.args(["-E", "SUDO_HOME=~/foobar", &devlayer_bin]);
+    let mut cmd = Command::new(&devlayer_bin);
+    cmd.env("SUDO_HOME", "~/foobar");
     cmd.args([format!("--join={}", &layer.name)]);
+    let mut cmd = as_root(&cmd);
     let output = cmd.output()?;
     assert!(output.status.code().unwrap() != 0);
 
@@ -64,9 +68,10 @@ fn test_weird_sudo_env_variables(layer: LayerManager) -> Result<()> {
             .contains("Home directory is not absolute")
     );
 
-    let mut cmd = Command::new("sudo");
-    cmd.args(["-E", "SUDO_HOME=/invalid-home-directory", &devlayer_bin]);
+    let mut cmd = Command::new(&devlayer_bin);
+    cmd.env("SUDO_HOME", "/invalid-home-directory");
     cmd.args([format!("--join={}", &layer.name)]);
+    let mut cmd = as_root(&cmd);
     let output = cmd.output()?;
     assert!(output.status.code().unwrap() != 0);
 
@@ -88,18 +93,11 @@ fn test_weird_sudo_env_variables(layer: LayerManager) -> Result<()> {
         absolute_dir_with_spaces.display()
     );
 
-    let mut cmd = Command::new("sudo");
-    cmd.args([
-        "-E",
-        format!(
-            "DEVLAYER_STORAGE_DIR={}",
-            absolute_dir_with_spaces.display()
-        )
-        .as_str(),
-        &devlayer_bin,
-    ]);
+    let mut cmd = Command::new(&devlayer_bin);
+    cmd.env("DEVLAYER_STORAGE_DIR", &absolute_dir_with_spaces);
     cmd.args([format!("--join={}", &layer.name)]);
     cmd.args(["true"]);
+    let mut cmd = as_root(&cmd);
     println!("cmd: {:?}", cmd);
     let output = cmd.output()?;
     println!("output: {}", String::from_utf8_lossy(&output.stdout));
