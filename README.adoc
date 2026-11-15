@@ -53,8 +53,6 @@ ifdef::env-github,env-vscode[]
 
 To build and install from source simply run `make install`.
 
-// Arch Linux users can install the `devlayer-bin` package from the AUR.
-
 For most other Linux distributions there are applicable binary packages available from
 the releases page: https://github.com/anoek/devlayer/releases
 

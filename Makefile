@@ -229,16 +229,6 @@ package: build/devlayer.1.gz build-release completion-scripts
 		target/x86_64-unknown-linux-musl/release/devlayer=/usr/bin/devlayer \
 		build/devlayer-zsh-completion=/usr/share/zsh/site-functions/_devlayer \
 		$(COMMON_FPM_FILES)
-	fpm \
-		-t pacman \
-		--fpm-options-file packaging/common-fpm-options \
-		--version $(VERSION) \
-		--architecture x86_64 \
-		--name devlayer-bin \
-		--package dist/devlayer-bin-$(VERSION)-1-x86_64.pkg.tar.zst \
-		target/x86_64-unknown-linux-musl/release/devlayer=/usr/bin/devlayer \
-		build/devlayer-zsh-completion=/usr/share/zsh/site-functions/_devlayer \
-		$(COMMON_FPM_FILES)
 	@echo "### Building static arm64 targets"
 	fpm \
 		-t deb \
@@ -247,6 +237,7 @@ package: build/devlayer.1.gz build-release completion-scripts
 		--architecture arm64 \
 		--package dist/devlayer_$(VERSION)_arm64.deb \
 		target/aarch64-unknown-linux-musl/release/devlayer=/usr/bin/devlayer \
+		build/devlayer-zsh-completion=/usr/share/zsh/vendor-completions/_devlayer \
 		$(COMMON_FPM_FILES)
 	fpm \
 		-t rpm \
@@ -255,15 +246,7 @@ package: build/devlayer.1.gz build-release completion-scripts
 		--architecture arm64 \
 		--package dist/devlayer.$(VERSION)-1.arm64.rpm \
 		target/aarch64-unknown-linux-musl/release/devlayer=/usr/bin/devlayer \
-		$(COMMON_FPM_FILES)
-	fpm \
-		-t pacman \
-		--fpm-options-file packaging/common-fpm-options \
-		--version $(VERSION) \
-		--architecture arm64 \
-		--name devlayer-bin \
-		--package dist/devlayer-bin-$(VERSION)-1-arm64.pkg.tar.zst \
-		target/aarch64-unknown-linux-musl/release/devlayer=/usr/bin/devlayer \
+		build/devlayer-zsh-completion=/usr/share/zsh/site-functions/_devlayer \
 		$(COMMON_FPM_FILES)
 
 
