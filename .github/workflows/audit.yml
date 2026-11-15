@@ -15,6 +15,12 @@ on:
 env:
     CARGO_TERM_COLOR: always
 
+# audit-check publishes its findings as a check run, which the default
+# read-only token can't create.
+permissions:
+    contents: read
+    checks: write
+
 jobs:
     security-audit:
         runs-on: ubuntu-latest
