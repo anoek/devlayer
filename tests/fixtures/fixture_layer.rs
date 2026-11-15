@@ -89,6 +89,19 @@ pub fn as_root(cmd: &Command) -> Command {
     sudo
 }
 
+/// The parent pid of `pid`
+#[allow(dead_code)]
+pub fn ppid_of(pid: i32) -> Result<i32> {
+    let status = std::fs::read_to_string(format!("/proc/{}/status", pid))?;
+    status
+        .lines()
+        .find_map(|line| line.strip_prefix("PPid:"))
+        .ok_or_else(|| anyhow::anyhow!("no PPid line for {}", pid))?
+        .trim()
+        .parse::<i32>()
+        .map_err(Into::into)
+}
+
 pub struct LayerManager {
     pub name: String,
     pub last_stdout: String,
@@ -141,10 +154,12 @@ impl LayerManager {
         }
     }
 
-    /* Controls whether --no-bind-cwd is automatically added to commands */
+    /// Runs commands from `dir` with the cwd bind on, as a user starting
+    /// devlayer in `dir` would
     #[allow(dead_code)]
-    pub fn set_bind_cwd(&mut self, bind_cwd: bool) {
-        self.bind_cwd = bind_cwd;
+    pub fn bind_cwd_in(&mut self, dir: &Path) {
+        self.bind_cwd = true;
+        self.cwd = Some(dir.to_path_buf());
     }
 
     /// Adds --no-bind-cwd unless the test opted in to the cwd bind or passes
@@ -160,18 +175,10 @@ impl LayerManager {
         if self.no_sudo { cmd } else { as_root(&cmd) }
     }
 
-    /// Applies the configured working directory to a command. A relative
-    /// LLVM_PROFILE_FILE is made absolute so coverage data from commands run
-    /// elsewhere still lands in this repository.
+    /// Applies the configured working directory to a command
     fn apply_cwd(&self, cmd: &mut Command) {
         if let Some(cwd) = &self.cwd {
             cmd.current_dir(cwd);
-            if let (Ok(profile), Ok(here)) =
-                (std::env::var("LLVM_PROFILE_FILE"), std::env::current_dir())
-                && Path::new(&profile).is_relative()
-            {
-                cmd.env("LLVM_PROFILE_FILE", here.join(profile));
-            }
         }
     }
 
@@ -200,6 +207,23 @@ impl LayerManager {
         let base = String::from_utf8_lossy(&output.stdout).to_string();
         let base = base.trim();
         Ok(PathBuf::from(base))
+    }
+
+    /// The pid file naming the layer's PID 1, next to the layer's directory
+    #[allow(dead_code)]
+    pub fn pid_file(&self) -> Result<PathBuf> {
+        Ok(PathBuf::from(format!("{}.pid", self.dir()?.display())))
+    }
+
+    /// The layer's PID 1, as its pid file records it
+    #[allow(dead_code)]
+    pub fn pid1(&self) -> Result<i32> {
+        let contents = std::fs::read_to_string(self.pid_file()?)?;
+        Ok(contents
+            .split_whitespace()
+            .next()
+            .unwrap_or_default()
+            .parse()?)
     }
 
     #[allow(dead_code)]

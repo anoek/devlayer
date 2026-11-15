@@ -90,3 +90,26 @@ fn ai_test_reject_requires_pattern(mut layer: LayerManager) -> Result<()> {
     assert!(layer.last_stdout.contains("scope-reject-file"));
     Ok(())
 }
+
+/// Without a pattern, accept and reject say how to accept or reject
+/// everything, even from a directory that has no layer to default to
+#[rstest]
+fn ai_test_pattern_hint_without_layer(mut layer: LayerManager) -> Result<()> {
+    let dir = std::env::temp_dir().join(format!("devlayer-coverage-{}", rid()));
+    std::fs::create_dir_all(&dir)?;
+    // No --join, so --last would apply
+    layer.no_default_options = true;
+    layer.cwd = Some(dir.clone());
+    for action in ["accept", "reject"] {
+        assert!(layer.xfail(&[action]));
+        assert!(
+            layer
+                .last_stderr
+                .contains(&format!("use `devlayer {} /`", action)),
+            "{}",
+            layer.last_stderr
+        );
+    }
+    std::fs::remove_dir_all(&dir)?;
+    Ok(())
+}

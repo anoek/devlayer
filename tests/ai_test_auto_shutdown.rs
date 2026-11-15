@@ -1,6 +1,6 @@
 mod fixtures;
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use fixtures::*;
 use nix::fcntl::{Flock, FlockArg};
 use rstest::*;
@@ -9,15 +9,9 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-/// The layer's pid file, `<storage>/<name>.pid`
-fn pid_file(layer: &LayerManager) -> Result<PathBuf> {
-    Ok(PathBuf::from(format!("{}.pid", layer.dir()?.display())))
-}
-
 /// PID 1 of the layer, if its pid file names a live process
 fn layer_pid(layer: &LayerManager) -> Option<i32> {
-    let pid = std::fs::read_to_string(pid_file(layer).ok()?).ok()?;
-    let pid = pid.split_whitespace().next()?.parse::<i32>().ok()?;
+    let pid = layer.pid1().ok()?;
     PathBuf::from(format!("/proc/{}", pid))
         .exists()
         .then_some(pid)
@@ -48,18 +42,6 @@ fn wait_until(timeout: Duration, mut f: impl FnMut() -> bool) -> bool {
     }
 }
 
-/// The parent pid of `pid`
-fn ppid_of(pid: i32) -> Result<i32> {
-    let status = std::fs::read_to_string(format!("/proc/{}/status", pid))?;
-    status
-        .lines()
-        .find_map(|line| line.strip_prefix("PPid:"))
-        .ok_or_else(|| anyhow!("no PPid line for {}", pid))?
-        .trim()
-        .parse::<i32>()
-        .map_err(Into::into)
-}
-
 /// When PID 1 dies, the supervisor unmounts the layer and removes its pid file
 #[rstest]
 fn ai_test_supervisor_cleans_up_after_pid1_exit(
@@ -72,7 +54,7 @@ fn ai_test_supervisor_cleans_up_after_pid1_exit(
         .args(["kill", "-KILL", &pid.to_string()])
         .status()?;
     assert!(wait_until(Duration::from_secs(5), || {
-        !pid_file(&layer).unwrap().exists()
+        !layer.pid_file().unwrap().exists()
     }));
     assert!(wait_until(Duration::from_secs(5), || {
         !has_mounts(&layer).unwrap()
@@ -125,7 +107,7 @@ fn ai_test_idle_layer_shuts_down(mut layer: LayerManager) -> Result<()> {
     let file = std::env::current_dir()?.join(&name);
     layer.run(&["touch", file.to_str().unwrap_or_default()])?;
     assert!(wait_until(Duration::from_secs(5), || {
-        !pid_file(&layer).unwrap().exists()
+        !layer.pid_file().unwrap().exists()
     }));
     // The supervisor removes the pid file before it unmounts the layer
     assert!(wait_until(Duration::from_secs(5), || {
@@ -155,7 +137,7 @@ fn ai_test_background_process_keeps_layer_up(
     assert!(layer_pid(&layer).is_some());
     layer.run(&["pkill", "-f", "sleep 3600"])?;
     assert!(wait_until(Duration::from_secs(5), || {
-        !pid_file(&layer).unwrap().exists()
+        !layer.pid_file().unwrap().exists()
     }));
     Ok(())
 }
@@ -203,8 +185,8 @@ fn ai_test_supervisor_leaves_restarted_layer(
     other.hold()?;
     let pid = layer_pid(&layer).expect("layer should be running");
     assert!(layer_pid(&other).is_some(), "other layer should be running");
-    let other_pid_file = std::fs::read_to_string(pid_file(&other)?)?;
-    let pid_file = pid_file(&layer)?;
+    let other_pid_file = std::fs::read_to_string(other.pid_file()?)?;
+    let pid_file = layer.pid_file()?;
     let lock_file = format!("{}.lock", layer.dir()?.display());
 
     // Hold the layer lock so the supervisor waits to clean up, as it would
@@ -262,7 +244,7 @@ fn ai_test_layer_waits_for_starting_command(
 fn ai_test_killed_launch_lets_layer_shut_down(
     layer: LayerManager,
 ) -> Result<()> {
-    let pid_file = pid_file(&layer)?;
+    let pid_file = layer.pid_file()?;
     // The setuid binary rather than sudo, so we kill the launch itself
     let mut launch = Command::new(format!("{}-setuid", layer.devlayer_bin))
         .args([

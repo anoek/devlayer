@@ -3,17 +3,16 @@ use super::mount_overlays::MountHash;
 use super::supervisor;
 use crate::config::resolve::generate_timestamp_name;
 use crate::config::{BindMount, BindMountOptions, Config, Network};
-use crate::layer::{Layer, LayerOrigin};
+use crate::layer::Layer;
 #[cfg(feature = "coverage")]
 use crate::util::CLONE_FS;
-use crate::util::get_layer_pid_path;
 use crate::util::{
     CLONE_INTO_CGROUP, CLONE_NEWCGROUP, CLONE_NEWIPC, CLONE_NEWNET,
     CLONE_NEWNS, CLONE_NEWPID, CLONE_NEWUTS, Clone3Args,
     check_path_for_mount_option_compatibility, clone3, mkdir, mount,
 };
 use crate::util::{Lock, SharedLock, write_no_follow};
-use crate::util::{get_running_layer_pid, layer_pid_file_contents};
+use crate::util::{get_running_layer_pid_or_remove, layer_pid_file_contents};
 use anyhow::Context;
 use anyhow::{Result, anyhow};
 use log::{error, trace};
@@ -64,6 +63,7 @@ impl Layer {
 
         Layer {
             name: layer_name.to_string(),
+            storage_dir: layers_storage_dir.to_path_buf(),
             base: layer_base_dir.clone(),
             work_base: work_base.clone(),
             upper_base: upper_base.clone(),
@@ -106,8 +106,11 @@ impl Layer {
         }
 
         /* If we have an existing layer, return it */
-        if let Some(pid) = get_running_layer_pid(layers_storage_dir, layer_name)
-        {
+        if let Some(pid) = get_running_layer_pid_or_remove(
+            &lock,
+            layers_storage_dir,
+            layer_name,
+        ) {
             let mut layer =
                 Layer::from_location(layers_storage_dir, layer_name, uid, gid);
             layer.pid = pid;
@@ -210,7 +213,8 @@ impl Layer {
             ),
         )?;
 
-        if config.bind_cwd && config.created_in == Path::new("/") {
+        if config.origin.bind_cwd && config.origin.created_in == Path::new("/")
+        {
             return Err(anyhow!(
                 "Refusing to bind / into the layer; run from a project directory or pass --no-bind-cwd"
             ));
@@ -235,12 +239,7 @@ impl Layer {
             .and_then(|overlay_mounts| {
                 /* Create PID 1 for our layer */
                 layer
-                    .start_layer(
-                        &config,
-                        &get_layer_pid_path(storage_dir, layer_name),
-                        &overlay_mounts,
-                        cgroup.as_ref(),
-                    )
+                    .start_layer(&config, &overlay_mounts, cgroup.as_ref())
                     .map_err(|e| anyhow!("Failed to start layer: {}", e))
             });
 
@@ -254,15 +253,9 @@ impl Layer {
             }
         };
 
-        /* Record where the layer was created the first time it starts. A
-         * restarted layer keeps its original origin. */
-        if !LayerOrigin::path(&layer.base).exists() {
-            LayerOrigin {
-                created_in: config.created_in.clone(),
-                bind_cwd: config.bind_cwd,
-            }
-            .save(&layer.base)?;
-        }
+        /* Record where the layer was created. A restarted layer was given
+         * the origin recorded when it was first started. */
+        config.origin.save(&layer.base)?;
 
         Ok((layer, lock))
     }
@@ -272,13 +265,13 @@ impl Layer {
      * but stick around to allow future processes to be launched in the same namespaces.
      *
      * PID 1 is started by a supervisor process we fork first, which waits for
-     * PID 1 to exit and then cleans up after the layer. The supervisor reports
-     * back whether PID 1 is ready, followed by its pid.
+     * PID 1 to exit and then cleans up after the layer. The supervisor sends
+     * us PID 1's pid once PID 1 is ready, or exits without sending anything
+     * if PID 1 fails to start.
      */
     fn start_layer(
         &self,
         config: &Config,
-        pid_file: &Path,
         overlay_mounts: &Vec<MountHash>,
         cgroup: Option<&OwnedFd>,
     ) -> Result<Pid> {
@@ -288,43 +281,28 @@ impl Layer {
         match unsafe { fork() }.context("failed to fork layer supervisor")? {
             ForkResult::Parent { child } => {
                 drop(write_fd);
-                let mut buffer = [0; 5];
-                let ready = std::fs::File::from(read_fd)
-                    .read_exact(&mut buffer)
-                    .is_ok()
-                    && buffer[0] == 0;
-                if !ready {
+                let mut pid = [0; 4];
+                if std::fs::File::from(read_fd).read_exact(&mut pid).is_err() {
                     let _ = waitpid(child, None);
                     return Err(anyhow!("Failed to setup layer"));
                 }
-                let pid = i32::from_le_bytes([
-                    buffer[1], buffer[2], buffer[3], buffer[4],
-                ]);
-                Ok(Pid::from_raw(pid))
+                Ok(Pid::from_raw(i32::from_le_bytes(pid)))
             }
             ForkResult::Child => {
                 drop(read_fd);
-                let pid1 = self
-                    .start_pid1(config, pid_file, overlay_mounts, cgroup)
-                    .map_err(|e| {
-                        error!("Failed to start layer: {:#}", e);
-                        e
-                    });
-                let message = match &pid1 {
-                    Ok((pid, _)) => {
-                        let mut message = vec![0];
-                        message.extend(pid.as_raw().to_le_bytes());
-                        message
-                    }
-                    Err(_) => vec![1],
-                };
-                let _ = nix::unistd::write(&write_fd, &message);
-                match pid1 {
+                match self.start_pid1(config, overlay_mounts, cgroup) {
                     Ok((pid, lock)) => {
+                        let _ = nix::unistd::write(
+                            &write_fd,
+                            &pid.as_raw().to_le_bytes(),
+                        );
                         supervisor::detach(&lock);
                         supervisor::supervise(self, pid, cgroup.is_some(), lock)
                     }
-                    Err(_) => std::process::exit(1),
+                    Err(e) => {
+                        error!("Failed to start layer: {:#}", e);
+                        std::process::exit(1)
+                    }
                 }
             }
         }
@@ -338,7 +316,6 @@ impl Layer {
     fn start_pid1(
         &self,
         config: &Config,
-        pid_file: &Path,
         overlay_mounts: &Vec<MountHash>,
         cgroup: Option<&OwnedFd>,
     ) -> Result<(Pid, SharedLock)> {
@@ -390,8 +367,9 @@ impl Layer {
             drop(write_fd);
 
             // write pid to pid file, or else don't leave PID 1 behind
+            let pid_file = self.pid_path();
             if let Err(e) =
-                write_no_follow(pid_file, layer_pid_file_contents(pid))
+                write_no_follow(&pid_file, layer_pid_file_contents(pid))
             {
                 let _ = nix::sys::signal::kill(pid, Signal::SIGKILL);
                 let _ = waitpid(pid, None);
@@ -454,7 +432,7 @@ impl Layer {
          * could get at the layer, nor could we shut it down. */
         supervisor::close_fds_except(&[write_fd.as_raw_fd(), lock.as_raw_fd()]);
 
-        /* Normalize credentials and dumpable state for pidfd-based setns().
+        /* Restore our dumpable state for pidfd-based setns().
          *
          * When another process uses pidfd_open + setns() to join our
          * namespaces, the kernel's ptrace_may_access() check verifies:
@@ -462,23 +440,10 @@ impl Layer {
          *      and gid/egid/sgid, or the caller has CAP_SYS_PTRACE.
          *   2. Our dumpable flag == SUID_DUMP_USER (1).
          *
-         * When launched via a setuid binary, we inherit ruid!=0 from the
-         * caller and dumpable=suid_dumpable (typically 2). Both cause
-         * ptrace_may_access to fail when CAP_SYS_PTRACE is unavailable.
-         *
-         * Fix: set all UIDs/GIDs to root and restore dumpable to 1. */
-        nix::unistd::setresuid(
-            Uid::from_raw(0),
-            Uid::from_raw(0),
-            Uid::from_raw(0),
-        )
-        .context("failed to normalize layer PID 1 UIDs to root")?;
-        nix::unistd::setresgid(
-            Gid::from_raw(0),
-            Gid::from_raw(0),
-            Gid::from_raw(0),
-        )
-        .context("failed to normalize layer PID 1 GIDs to root")?;
+         * Our supervisor already set all its UIDs/GIDs to root, which we
+         * inherited, but changing them left dumpable at suid_dumpable
+         * (typically 2), which fails check 2 when CAP_SYS_PTRACE is
+         * unavailable. */
         unsafe {
             libc::prctl(libc::PR_SET_DUMPABLE, 1);
         }

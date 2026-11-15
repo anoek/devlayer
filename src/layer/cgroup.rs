@@ -192,7 +192,7 @@ impl Layer {
 
 /// Removes a cgroup once the processes in it have exited, waiting a little
 /// while for that. Layer processes have already been killed by this point.
-/// The only other processes in the cgroup are the `layer` commands waiting
+/// The only other processes in the cgroup are the `devlayer` commands waiting
 /// on them, which exit by themselves once their child is gone, so they get to
 /// report its exit status instead of being killed too.
 pub(crate) fn remove_cgroup(path: &Path) {

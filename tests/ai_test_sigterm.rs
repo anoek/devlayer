@@ -10,14 +10,7 @@ use std::time::{Duration, Instant};
 fn ai_test_sigterm_stops_layer(mut layer: LayerManager) -> Result<()> {
     layer.hold()?;
 
-    layer.run(&["config", "layer_dir"])?;
-    let pid_file = format!("{}.pid", layer.last_stdout.trim());
-    let pid = std::fs::read_to_string(&pid_file)?;
-    let pid = pid
-        .split_whitespace()
-        .next()
-        .unwrap_or_default()
-        .to_string();
+    let pid = layer.pid1()?.to_string();
     let proc_dir = format!("/proc/{}", pid);
     assert!(Path::new(&proc_dir).exists());
 

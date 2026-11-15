@@ -67,8 +67,9 @@ fn test_list_ignore_bad_pid_file(mut layer: LayerManager) -> Result<()> {
     assert!(layer.run(&["list"]).is_ok());
     // still expected to be listed
     assert!(layer.all_stdout.contains("coverage_test_bad_pid_file"));
-    // and listing it cleans up the bad pid file
-    assert!(!Path::new(&pid_file_name).exists());
+    // but listing doesn't hold the layer lock, so it leaves the pid file
+    // alone, as it might be one that's being written
+    assert!(Path::new(&pid_file_name).exists());
 
     std::fs::remove_file(&lock_file_name)?;
 

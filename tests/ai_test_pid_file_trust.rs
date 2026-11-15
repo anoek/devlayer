@@ -3,14 +3,12 @@ mod fixtures;
 use anyhow::Result;
 use fixtures::*;
 use rstest::*;
-use std::path::PathBuf;
 use std::process::Command;
 
 /// Writes `contents` to the layer's pid file, as a stale or mistaken pid
 /// file would have them
 fn write_pid_file(layer: &LayerManager, contents: &str) -> Result<()> {
-    let pid_file = format!("{}.pid", layer.dir()?.display());
-    std::fs::write(PathBuf::from(pid_file), contents)?;
+    std::fs::write(layer.pid_file()?, contents)?;
     Ok(())
 }
 
@@ -42,9 +40,7 @@ fn ai_test_pid_file_with_wrong_start_time(
 ) -> Result<()> {
     let mut other = LayerManager::new();
     other.hold()?;
-    let other_pid_file = format!("{}.pid", other.dir()?.display());
-    let contents = std::fs::read_to_string(other_pid_file)?;
-    let other_pid = contents.split_whitespace().next().unwrap_or_default();
+    let other_pid = other.pid1()?;
 
     layer.run(&["true"])?;
     layer.run(&["stop"])?;

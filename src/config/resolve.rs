@@ -132,18 +132,6 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         }
     }
 
-    if let Ok(ignored_env) = env::var("DEVLAYER_IGNORED") {
-        if let Ok(ignored_val) = bool::from_str(&ignored_env) {
-            partial_config.ignored = Some(ignored_val);
-            sources.insert("ignored".into(), "environment".into());
-        } else {
-            return Err(anyhow::anyhow!(
-                "Invalid value for DEVLAYER_IGNORED: {}",
-                ignored_env
-            ));
-        }
-    }
-
     // Bind mounts and masks from environment variables form a single layer
     let mut env_bind_layer = vec![];
     if let Ok(bind_mounts_env) = env::var("DEVLAYER_BIND") {
@@ -174,30 +162,31 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     }
     bind_layers.push(env_bind_layer);
 
-    if let Ok(no_default_binds_env) = env::var("DEVLAYER_NO_DEFAULT_BINDS") {
-        let no_default_binds_val = bool::from_str(&no_default_binds_env)
-            .expect("Invalid value for DEVLAYER_NO_DEFAULT_BINDS");
-        partial_config.no_default_binds = Some(no_default_binds_val);
-        sources.insert("no_default_binds".into(), "environment".into());
-    }
-
-    if let Ok(value) = env::var("DEVLAYER_NO_DEFAULT_LLM_BINDS") {
-        let value = bool::from_str(&value).map_err(|_| {
-            anyhow::anyhow!(
-                "Invalid value for DEVLAYER_NO_DEFAULT_LLM_BINDS: {}",
-                value
-            )
-        })?;
-        partial_config.no_default_llm_binds = Some(value);
-        sources.insert("no_default_llm_binds".into(), "environment".into());
-    }
-
-    if let Ok(value) = env::var("DEVLAYER_NO_BIND_CWD") {
-        let value = bool::from_str(&value).map_err(|_| {
-            anyhow::anyhow!("Invalid value for DEVLAYER_NO_BIND_CWD: {}", value)
-        })?;
-        partial_config.no_bind_cwd = Some(value);
-        sources.insert("no_bind_cwd".into(), "environment".into());
+    for (var, key, field) in [
+        ("DEVLAYER_IGNORED", "ignored", &mut partial_config.ignored),
+        (
+            "DEVLAYER_NO_DEFAULT_BINDS",
+            "no_default_binds",
+            &mut partial_config.no_default_binds,
+        ),
+        (
+            "DEVLAYER_NO_DEFAULT_LLM_BINDS",
+            "no_default_llm_binds",
+            &mut partial_config.no_default_llm_binds,
+        ),
+        (
+            "DEVLAYER_NO_BIND_CWD",
+            "no_bind_cwd",
+            &mut partial_config.no_bind_cwd,
+        ),
+    ] {
+        if let Some(value) = env::var(var).ok().filter(|v| !v.is_empty()) {
+            let value = bool::from_str(&value).map_err(|_| {
+                anyhow::anyhow!("Invalid value for {}: {}", var, value)
+            })?;
+            *field = Some(value);
+            sources.insert(key.into(), "environment".into());
+        }
     }
 
     for (var, key, field) in [
@@ -216,55 +205,45 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("log_level".into(), "cli".into());
     }
 
-    // Set storage_dir first if provided via CLI, as it's needed for --new and --last
+    // Resolve storage_dir first, as choosing the layer needs it
     if let Some(storage_dir) = cli.storage_dir {
         partial_config.storage_dir = Some(storage_dir);
         sources.insert("storage_dir".into(), "cli".into());
+    }
+    let storage_dir = resolve_storage_dir(
+        partial_config.storage_dir,
+        uid_gid_home.uid,
+        uid_gid_home.gid,
+    )?;
+    if !sources.contains_key("storage_dir") {
+        sources.insert("storage_dir".into(), "default".into());
     }
 
     // Choose the layer. Explicit --new/--last/--join win, then a join from
     // the environment or a config file, then the default for the action.
     let cwd = std::env::current_dir()?;
-    let (selection, explicit) = if cli.new {
-        (LayerSelection::New, "cli --new")
+    let selection = if cli.new {
+        sources.insert("name".into(), "cli --new".into());
+        LayerSelection::New
     } else if cli.last {
-        (LayerSelection::Last, "cli --last")
-    } else if let Some(name) = cli.join.clone() {
-        (LayerSelection::Join(name), "cli --join")
-    } else if let Some(name) = partial_config.join.take() {
-        (LayerSelection::Join(name), "")
+        sources.insert("name".into(), "cli --last".into());
+        LayerSelection::Last
+    } else if let Some(name) = cli.join {
+        sources.insert("name".into(), "cli --join".into());
+        LayerSelection::Join(name)
+    } else if let Some(name) = partial_config.join {
+        LayerSelection::Join(name)
     } else {
-        (default_selection(cli.action.as_ref()), "")
+        default_selection(cli.action.as_ref())
     };
     let new_layer = selection == LayerSelection::New;
     let name = match selection {
         LayerSelection::Join(name) => name,
-        LayerSelection::New => generate_timestamp_name(&resolve_storage_dir(
-            partial_config.storage_dir.clone(),
-            uid_gid_home.uid,
-            uid_gid_home.gid,
-        )?),
-        LayerSelection::Last => find_last_layer(
-            &resolve_storage_dir(
-                partial_config.storage_dir.clone(),
-                uid_gid_home.uid,
-                uid_gid_home.gid,
-            )?,
-            &cwd,
-        )?,
-        LayerSelection::LastOrNew => {
-            let storage_dir = resolve_storage_dir(
-                partial_config.storage_dir.clone(),
-                uid_gid_home.uid,
-                uid_gid_home.gid,
-            )?;
-            find_last_layer(&storage_dir, &cwd)
-                .unwrap_or_else(|_| generate_timestamp_name(&storage_dir))
-        }
+        LayerSelection::New => generate_timestamp_name(&storage_dir),
+        LayerSelection::Last => find_last_layer(&storage_dir, &cwd)?,
+        LayerSelection::LastOrNew => find_last_layer(&storage_dir, &cwd)
+            .unwrap_or_else(|_| generate_timestamp_name(&storage_dir)),
     };
-    if !explicit.is_empty() {
-        sources.insert("name".into(), explicit.into());
-    }
 
     if let Some(net) = cli.net {
         partial_config.net = Some(net);
@@ -361,15 +340,6 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("memory".into(), "default".into());
     }
 
-    let storage_dir = resolve_storage_dir(
-        partial_config.storage_dir,
-        uid_gid_home.uid,
-        uid_gid_home.gid,
-    )?;
-    if !sources.contains_key("storage_dir") {
-        sources.insert("storage_dir".into(), "default".into());
-    }
-
     let layer_dir = storage_dir.join(name.clone());
     if !sources.contains_key("layer_dir") {
         sources.insert("layer_dir".into(), "derived from storage_dir".into());
@@ -392,28 +362,54 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         .join(cwd.strip_prefix(&mp)?);
     sources.insert("overlay_cwd".into(), "derived from storage_dir".into());
 
-    // The directory the layer was created in is bound just above the LLM binds
-    let (created_in, bind_cwd) = resolve_origin(&layer_dir, &cwd, no_bind_cwd)?;
-    sources.insert("created_in".into(), "layer settings or cwd".into());
-    sources.insert("bind_cwd".into(), "layer settings or no_bind_cwd".into());
+    // Where a layer was created and whether that directory is bound are
+    // recorded when it's created, so entering it from another directory, or
+    // without --no-bind-cwd, doesn't change its binds. A new layer's name was
+    // free when it was generated, so an origin recorded under it belongs to a
+    // concurrent launch that took the name first. Binding / is refused when a
+    // layer starts, not here, so actions that don't start one work from /.
+    let recorded = if new_layer {
+        None
+    } else {
+        LayerOrigin::load(&layer_dir)
+    };
+    let origin = match recorded {
+        Some(origin) => {
+            let path = LayerOrigin::path(&layer_dir).display().to_string();
+            sources.insert("created_in".into(), path.clone());
+            sources.insert("bind_cwd".into(), path);
+            origin
+        }
+        None => {
+            let no_bind_cwd_source =
+                sources.get("no_bind_cwd").cloned().unwrap_or_default();
+            sources.insert("created_in".into(), "cwd".into());
+            sources.insert("bind_cwd".into(), no_bind_cwd_source);
+            LayerOrigin {
+                created_in: cwd.canonicalize().context(format!(
+                    "Failed to canonicalize current directory {}",
+                    cwd.display()
+                ))?,
+                bind_cwd: !no_bind_cwd,
+            }
+        }
+    };
+
+    // Below the config file, environment and CLI bind layers, from lowest to
+    // highest precedence: the default bind mounts including audio, the LLM
+    // tool binds, and the directory the layer was created in
     let mut path_layers: Vec<Vec<BindMount>> = vec![];
-    if bind_cwd {
-        path_layers.insert(0, vec![path_bind_mount(&created_in)?]);
-    }
-
-    // LLM tool binds sit just above the default bind mounts
-    if !no_default_llm_binds {
-        path_layers.insert(
-            0,
-            path_bind_mounts(get_llm_bind_mounts(&uid_gid_home.home))?,
-        );
-    }
-
-    // Default bind mounts, including audio, are the lowest precedence layer
     if !no_default_binds {
         let mut default_binds = get_default_bind_mounts(&net);
         default_binds.extend(get_audio_bind_mounts());
-        path_layers.insert(0, path_bind_mounts(default_binds)?);
+        path_layers.push(path_bind_mounts(default_binds)?);
+    }
+    if !no_default_llm_binds {
+        path_layers
+            .push(path_bind_mounts(get_llm_bind_mounts(&uid_gid_home.home))?);
+    }
+    if origin.bind_cwd {
+        path_layers.push(vec![path_bind_mount(&origin.created_in)?]);
     }
 
     // Resolve bind mounts layer by layer from lowest to highest precedence.
@@ -426,10 +422,11 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         .collect::<Result<Vec<Vec<BindMount>>>>()?;
 
     // Binding the home directory takes asking for it, e.g. with --bind=.
-    let cwd_bind_is_home = bind_cwd
-        && uid_gid_home.home.canonicalize().ok().as_ref() == Some(&created_in)
+    let cwd_bind_is_home = origin.bind_cwd
+        && uid_gid_home.home.canonicalize().ok().as_ref()
+            == Some(&origin.created_in)
         && !parsed_layers.iter().flatten().any(|mount| {
-            mount.target == created_in
+            mount.target == origin.created_in
                 && mount.options != BindMountOptions::Mask
         });
 
@@ -478,8 +475,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         bind_mounts,
         no_default_binds,
         no_default_llm_binds,
-        created_in,
-        bind_cwd,
+        origin,
         cwd_bind_is_home,
         cpus,
         memory,
@@ -539,31 +535,9 @@ fn get_default_bind_mounts(net: &Network) -> Vec<String> {
     default_binds
 }
 
-/// Returns the directory a layer was created in and whether that directory is
-/// bound into the layer. An existing layer keeps the values recorded in its
-/// settings when it was created, so re-entering it from another directory, or
-/// without --no-bind-cwd, does not change its binds. A new layer uses `cwd`.
-/// Binding / is refused when a layer starts, not here, so actions that don't
-/// start a layer still work from /.
-pub fn resolve_origin(
-    layer_dir: &Path,
-    cwd: &Path,
-    no_bind_cwd: bool,
-) -> Result<(PathBuf, bool)> {
-    if let Some(origin) = LayerOrigin::load(layer_dir) {
-        return Ok((origin.created_in, origin.bind_cwd));
-    }
-
-    let created_in = cwd.canonicalize().context(format!(
-        "Failed to canonicalize current directory {}",
-        cwd.display()
-    ))?;
-    Ok((created_in, !no_bind_cwd))
-}
-
 /// Well-known AI tool config and state paths, relative to the home directory,
 /// that are bound into layers by default unless --no-default-llm-binds is set
-pub const LLM_BIND_PATHS: &[&str] = &[
+const LLM_BIND_PATHS: &[&str] = &[
     ".claude",
     ".claude.json",
     ".codex",
@@ -584,12 +558,11 @@ pub const LLM_BIND_PATHS: &[&str] = &[
 ];
 
 /// Returns the LLM_BIND_PATHS that exist under `home`, as absolute paths
-fn get_llm_bind_mounts(home: &Path) -> Vec<String> {
+fn get_llm_bind_mounts(home: &Path) -> Vec<PathBuf> {
     LLM_BIND_PATHS
         .iter()
         .map(|path| home.join(path))
         .filter(|path| path.exists())
-        .map(|path| path.display().to_string())
         .collect()
 }
 
@@ -965,7 +938,7 @@ pub(crate) fn generate_timestamp_name(storage_dir: &Path) -> String {
 
 /// How the layer to use is chosen
 #[derive(Debug, Clone, PartialEq)]
-pub enum LayerSelection {
+enum LayerSelection {
     /// A new layer with a generated `ephemeral_*` name
     New,
     /// The newest layer created in the cwd, or else in its nearest ancestor
@@ -980,7 +953,7 @@ pub enum LayerSelection {
 
 /// The layer selection used when no --new, --last or --join is given and no
 /// join is set in the environment or a config file
-pub fn default_selection(action: Option<&Action>) -> LayerSelection {
+fn default_selection(action: Option<&Action>) -> LayerSelection {
     match action {
         None => LayerSelection::New,
         Some(
@@ -1001,6 +974,22 @@ pub fn default_selection(action: Option<&Action>) -> LayerSelection {
         Some(Action::Config { .. }) => LayerSelection::LastOrNew,
         Some(_) => LayerSelection::New,
     }
+}
+
+/// Fails if the action is accept or reject without a pattern. Checked before
+/// the layer is chosen, so the hint is given even where there's no layer.
+pub fn require_patterns(action: Option<&Action>) -> Result<()> {
+    let (name, patterns) = match action {
+        Some(Action::Accept { patterns }) => ("accept", patterns),
+        Some(Action::Reject { patterns }) => ("reject", patterns),
+        _ => return Ok(()),
+    };
+    if patterns.as_ref().is_none_or(|p| p.is_empty()) {
+        return Err(anyhow::anyhow!(
+            "{name} requires at least one pattern; use `devlayer {name} /` to {name} every change in the layer"
+        ));
+    }
+    Ok(())
 }
 
 /// Finds the newest layer created in `cwd`, or else in the nearest ancestor
@@ -1147,10 +1136,7 @@ mod tests {
 
         assert_eq!(
             get_llm_bind_mounts(&home),
-            vec![
-                home.join(".claude.json").display().to_string(),
-                home.join(".codex").display().to_string(),
-            ]
+            vec![home.join(".claude.json"), home.join(".codex")]
         );
         std::fs::remove_dir_all(&home).unwrap();
     }
@@ -1164,10 +1150,8 @@ mod tests {
 
         let binds = get_llm_bind_mounts(&home);
         assert_eq!(binds.len(), 17);
-        let expected: Vec<String> = LLM_BIND_PATHS
-            .iter()
-            .map(|p| home.join(p).display().to_string())
-            .collect();
+        let expected: Vec<PathBuf> =
+            LLM_BIND_PATHS.iter().map(|p| home.join(p)).collect();
         assert_eq!(binds, expected);
         std::fs::remove_dir_all(&home).unwrap();
     }
@@ -1231,8 +1215,10 @@ mod tests {
             bind_mounts: vec![],
             no_default_binds: false,
             no_default_llm_binds: false,
-            created_in: PathBuf::from("/tmp"),
-            bind_cwd: false,
+            origin: LayerOrigin {
+                created_in: PathBuf::from("/tmp"),
+                bind_cwd: false,
+            },
             cwd_bind_is_home: false,
             cpus: None,
             memory: None,

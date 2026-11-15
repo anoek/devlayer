@@ -50,6 +50,7 @@ pub fn main() -> Result<()> {
         logger.set_level(log::LevelFilter::Info);
     };
 
+    config::resolve::require_patterns(cli.action.as_ref())?;
     let config = resolve_config(cli.clone()).context("Resolving config")?;
     let uid_gid_home =
         resolve_uid_gid_home().context("Resolving uid/gid/home")?;

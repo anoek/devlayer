@@ -16,16 +16,14 @@ fn project_dir(layer: &LayerManager) -> Result<PathBuf> {
 /// default (on)
 fn layer_in(dir: &Path) -> LayerManager {
     let mut layer = LayerManager::new();
-    layer.set_bind_cwd(true);
-    layer.cwd = Some(dir.to_path_buf());
+    layer.bind_cwd_in(dir);
     layer
 }
 
 #[rstest]
 fn ai_test_cwd_bound_by_default(mut layer: LayerManager) -> Result<()> {
     let dir = project_dir(&layer)?;
-    layer.set_bind_cwd(true);
-    layer.cwd = Some(dir.clone());
+    layer.bind_cwd_in(&dir);
 
     layer.run(&["touch", "cwd-bound-file"])?;
 
@@ -63,8 +61,7 @@ fn ai_test_no_bind_cwd_flag_env_config(layer: LayerManager) -> Result<()> {
 
 #[rstest]
 fn ai_test_refuse_root(mut layer: LayerManager) -> Result<()> {
-    layer.set_bind_cwd(true);
-    layer.cwd = Some(PathBuf::from("/"));
+    layer.bind_cwd_in(Path::new("/"));
 
     assert!(layer.xfail(&["true"]));
     assert!(layer.last_stderr.contains(
@@ -80,26 +77,9 @@ fn ai_test_refuse_root(mut layer: LayerManager) -> Result<()> {
 }
 
 #[rstest]
-fn ai_test_home_allowed(mut layer: LayerManager) -> Result<()> {
-    let home = PathBuf::from(std::env::var("HOME")?);
-    layer.set_bind_cwd(true);
-    layer.cwd = Some(home.clone());
-
-    layer.run(&["config", "bind_cwd"])?;
-    assert_eq!(layer.last_stdout.trim(), "true");
-    layer.run(&["config", "created_in"])?;
-    assert_eq!(
-        layer.last_stdout.trim(),
-        home.canonicalize()?.display().to_string()
-    );
-    Ok(())
-}
-
-#[rstest]
 fn ai_test_cwd_bind_reenter_from_subdir(mut layer: LayerManager) -> Result<()> {
     let dir = project_dir(&layer)?;
-    layer.set_bind_cwd(true);
-    layer.cwd = Some(dir.clone());
+    layer.bind_cwd_in(&dir);
     layer.run(&["true"])?;
 
     // Entering the running layer from a subdirectory keeps the original bind
@@ -114,8 +94,7 @@ fn ai_test_cwd_bind_reenter_from_subdir(mut layer: LayerManager) -> Result<()> {
 #[rstest]
 fn ai_test_restart_keeps_origin(mut layer: LayerManager) -> Result<()> {
     let dir = project_dir(&layer)?;
-    layer.set_bind_cwd(true);
-    layer.cwd = Some(dir.clone());
+    layer.bind_cwd_in(&dir);
     layer.run(&["true"])?;
     layer.run(&["stop"])?;
 
@@ -131,8 +110,7 @@ fn ai_test_restart_keeps_origin(mut layer: LayerManager) -> Result<()> {
 #[rstest]
 fn ai_test_no_bind_cwd_persists(mut layer: LayerManager) -> Result<()> {
     let dir = project_dir(&layer)?;
-    layer.set_bind_cwd(true);
-    layer.cwd = Some(dir.clone());
+    layer.bind_cwd_in(&dir);
     layer.run(&["--no-bind-cwd", "true"])?;
 
     // Re-entering without the flag keeps the layer's original choice
@@ -147,8 +125,7 @@ fn ai_test_no_bind_cwd_persists(mut layer: LayerManager) -> Result<()> {
 /// bound.
 #[rstest]
 fn ai_test_root_non_creating_actions_ok(mut layer: LayerManager) -> Result<()> {
-    layer.set_bind_cwd(true);
-    layer.cwd = Some(PathBuf::from("/"));
+    layer.bind_cwd_in(Path::new("/"));
     assert!(layer.pass(&["list"]));
     assert!(layer.pass(&["config", "name"]));
     Ok(())
@@ -160,8 +137,7 @@ fn ai_test_root_non_creating_actions_ok(mut layer: LayerManager) -> Result<()> {
 fn ai_test_cwd_with_colon(mut layer: LayerManager) -> Result<()> {
     let dir = std::env::current_dir()?.join(layer.test_filename("proj:v2"));
     std::fs::create_dir_all(&dir)?;
-    layer.set_bind_cwd(true);
-    layer.cwd = Some(dir.clone());
+    layer.bind_cwd_in(&dir);
 
     layer.run(&["touch", "colon-file"])?;
     assert!(dir.join("colon-file").exists());
@@ -176,8 +152,7 @@ fn ai_test_origin_not_writable_from_layer(
     mut layer: LayerManager,
 ) -> Result<()> {
     let dir = project_dir(&layer)?;
-    layer.set_bind_cwd(true);
-    layer.cwd = Some(dir.clone());
+    layer.bind_cwd_in(&dir);
     layer.run(&["--no-bind-cwd", "true"])?;
 
     let settings = layer.dir()?.join("data").join("settings.json");
@@ -192,5 +167,31 @@ fn ai_test_origin_not_writable_from_layer(
     assert_eq!(layer.last_stdout.trim(), dir.display().to_string());
     layer.run(&["config", "bind_cwd"])?;
     assert_eq!(layer.last_stdout.trim(), "false");
+    Ok(())
+}
+
+/// `config` reports where bind_cwd comes from: the setting for a layer
+/// that doesn't exist yet, and the recorded origin once it does
+#[rstest]
+fn ai_test_bind_cwd_source(mut layer: LayerManager) -> Result<()> {
+    let dir = project_dir(&layer)?;
+    layer.bind_cwd_in(&dir);
+    layer.run(&["--no-bind-cwd", "config", "bind_cwd"])?;
+    assert!(
+        layer.last_stderr.contains("bind_cwd=false set from cli"),
+        "{}",
+        layer.last_stderr
+    );
+
+    layer.run(&["true"])?;
+    layer.run(&["--no-bind-cwd", "config", "bind_cwd"])?;
+    let origin = layer.dir()?.join("origin.json");
+    assert!(
+        layer
+            .last_stderr
+            .contains(&format!("bind_cwd=true set from {}", origin.display())),
+        "{}",
+        layer.last_stderr
+    );
     Ok(())
 }

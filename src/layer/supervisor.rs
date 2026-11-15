@@ -11,17 +11,17 @@
 
 use crate::layer::Layer;
 use crate::layer::cgroup::remove_cgroup;
-use crate::util::{SharedLock, get_running_layer_pid};
+use crate::util::{SharedLock, get_running_layer_pid_or_remove};
 use anyhow::{Context, Result};
 use log::trace;
 use nix::sys::wait::waitpid;
 use nix::unistd::{Gid, Pid, Uid, setresgid, setresuid, setsid};
 use std::os::fd::{AsRawFd, RawFd};
-use std::path::Path;
 
 /// Detaches the current (freshly forked) process from the caller's session
 /// and makes it fully root, so the user can't signal it and it survives the
-/// user's terminal going away.
+/// user's terminal going away. PID 1, which we start, inherits being fully
+/// root, which joining the layer with pidfd setns() requires.
 pub(super) fn become_supervisor() -> Result<()> {
     setsid().context("failed to create a session for the layer supervisor")?;
     setresuid(Uid::from_raw(0), Uid::from_raw(0), Uid::from_raw(0))
@@ -83,18 +83,18 @@ pub(super) fn supervise(
 }
 
 fn cleanup(layer: &Layer, own_cgroup: bool, lock: SharedLock) -> Result<()> {
-    let storage_dir = layer.base.parent().unwrap_or(Path::new("/"));
-
     /* When PID 1 shut the layer down, it left us holding the lock already.
      * Without a lock file the layer was deleted, which already stopped and
      * unmounted it. */
-    let Some(_lock) = lock.lock()? else {
+    let Some(lock) = lock.lock()? else {
         return Ok(());
     };
 
     /* If the pid file names a running PID 1, the layer was restarted, so
      * leave the new instance alone. Otherwise this removes the pid file. */
-    if get_running_layer_pid(storage_dir, &layer.name).is_some() {
+    if get_running_layer_pid_or_remove(&lock, &layer.storage_dir, &layer.name)
+        .is_some()
+    {
         return Ok(());
     }
 

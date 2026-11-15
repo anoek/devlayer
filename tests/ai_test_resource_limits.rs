@@ -221,12 +221,14 @@ fn ai_test_limits_applied(mut layer: LayerManager) -> Result<()> {
     // Processes that join the running layer are in its cgroup too
     layer.hold_with(&args)?;
     let cgroup = host_cgroup(&layer).expect("layer cgroup should exist");
+    let procs = cgroup.join("cgroup.procs");
+    // PID 1 and the process holding the layer up
+    let held = fs::read_to_string(&procs)?.lines().count();
     let mut child =
         layer.run_in_background(&[args[0], args[1], "sleep", "30"])?;
     let mut joined = false;
     for _ in 0..100 {
-        let procs = fs::read_to_string(cgroup.join("cgroup.procs"))?;
-        if procs.lines().count() > 1 {
+        if fs::read_to_string(&procs)?.lines().count() > held {
             joined = true;
             break;
         }
@@ -337,19 +339,10 @@ fn ai_test_limits_stale_cgroup(mut layer: LayerManager) -> Result<()> {
     // Kill the layer and its supervisor without cleaning up, leaving an
     // empty cgroup behind
     let cgroup = host_cgroup(&layer).expect("layer cgroup should exist");
-    layer.run(&["config", "layer_dir"])?;
-    let pid_file = format!("{}.pid", layer.last_stdout.trim());
-    let pid = fs::read_to_string(&pid_file)?;
-    let pid = pid.split_whitespace().next().unwrap_or_default();
-    let status = fs::read_to_string(format!("/proc/{}/status", pid))?;
-    let supervisor = status
-        .lines()
-        .find_map(|line| line.strip_prefix("PPid:"))
-        .unwrap_or_default()
-        .trim()
-        .to_string();
+    let pid = layer.pid1()?;
+    let supervisor = ppid_of(pid)?;
     std::process::Command::new("sudo")
-        .args(["kill", "-9", &supervisor, pid.trim()])
+        .args(["kill", "-9", &supervisor.to_string(), &pid.to_string()])
         .status()?;
     for _ in 0..100 {
         if fs::read_to_string(cgroup.join("cgroup.procs"))?.is_empty() {

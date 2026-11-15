@@ -1,5 +1,6 @@
 use super::impls::deserialize_level_filter;
 use super::limits::deserialize_number_or_string;
+use crate::layer::LayerOrigin;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
@@ -85,10 +86,8 @@ pub struct Config {
     pub bind_mounts: Vec<BindMount>,
     pub no_default_binds: bool,
     pub no_default_llm_binds: bool,
-    /// Canonical directory the layer was created in
-    pub created_in: PathBuf,
-    /// Whether created_in is bound read-write into the layer
-    pub bind_cwd: bool,
+    /// Where the layer was created and whether that directory is bound
+    pub origin: LayerOrigin,
     /// Whether that would bind the home directory without a bind of it
     /// being asked for, which starting the layer refuses
     pub cwd_bind_is_home: bool,

@@ -4,6 +4,8 @@ use std::path::PathBuf;
 
 use log::trace;
 
+use super::Lock;
+
 /**
  * Get the PID 1 of a running layer, from its pid file.
  *
@@ -12,42 +14,50 @@ use log::trace;
  * e.g. after a reboot, may name an unrelated process, which we must not
  * kill everything alongside of or run commands next to.
  *
- * Returns None, removing the pid file, if the layer is not running.
+ * Returns None if the layer is not running. Without the layer lock, a pid
+ * file that's being written may read as not running.
  */
 pub fn get_running_layer_pid(
     layers_storage_dir: &Path,
     layer_name: &str,
 ) -> Option<Pid> {
     let pid_file = get_layer_pid_path(layers_storage_dir, layer_name);
-    if !pid_file.exists() {
-        return None;
-    }
+    let contents = std::fs::read_to_string(pid_file).ok()?;
+    let mut fields = contents.split_whitespace();
+    let pid = Pid::from_raw(fields.next()?.parse().ok()?);
+    let start_time = fields.next()?.parse::<u64>().ok()?;
+    let (state, started) = process_state_and_start_time(pid)?;
+    (started == start_time
+        && state != "Z"
+        && state != "T"
+        && is_namespace_init(pid))
+    .then_some(pid)
+}
 
-    let pid = std::fs::read_to_string(&pid_file)
-        .ok()
-        .and_then(|contents| {
-            let mut fields = contents.split_whitespace();
-            let pid = Pid::from_raw(fields.next()?.parse().ok()?);
-            let start_time = fields.next()?.parse::<u64>().ok()?;
-            let (state, started) = process_state_and_start_time(pid)?;
-            (started == start_time
-                && state != "Z"
-                && state != "T"
-                && is_namespace_init(pid))
-            .then_some(pid)
-        });
-
+/**
+ * Like get_running_layer_pid, but removes the pid file if the layer is not
+ * running. Only safe while holding the layer's `_lock`, as otherwise the
+ * pid file may be one that's still being written.
+ */
+pub fn get_running_layer_pid_or_remove(
+    _lock: &Lock,
+    layers_storage_dir: &Path,
+    layer_name: &str,
+) -> Option<Pid> {
+    let pid = get_running_layer_pid(layers_storage_dir, layer_name);
+    let pid_file = get_layer_pid_path(layers_storage_dir, layer_name);
     match pid {
         Some(pid) => {
             trace!("Existing layer '{}' found with PID: {}", layer_name, pid);
         }
-        None => {
+        None if pid_file.exists() => {
             trace!(
                 "Layer '{}' isn't running, removing its pid file",
                 layer_name
             );
             std::fs::remove_file(&pid_file).ok();
         }
+        None => {}
     }
     pid
 }

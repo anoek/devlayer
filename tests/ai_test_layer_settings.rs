@@ -29,8 +29,10 @@ fn create_test_config() -> ::devlayer::config::Config {
         bind_mounts: Vec::new(),
         no_default_binds: false,
         no_default_llm_binds: false,
-        created_in: PathBuf::from("/tmp"),
-        bind_cwd: false,
+        origin: ::devlayer::layer::LayerOrigin {
+            created_in: PathBuf::from("/tmp"),
+            bind_cwd: false,
+        },
         cwd_bind_is_home: false,
         cpus: None,
         memory: None,

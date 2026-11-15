@@ -16,7 +16,7 @@ build-debug-with-setuid: build
 	sudo chmod u+s target/debug/devlayer-setuid
 	
 build-coverage-binary:	
-	CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' LLVM_PROFILE_FILE="coverage/profraw/cargo-test-%p-%m.profraw" cargo build --profile coverage --features coverage
+	CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' LLVM_PROFILE_FILE="$(CURDIR)/coverage/profraw/cargo-test-%p-%m.profraw" cargo build --profile coverage --features coverage
 	rm -f target/coverage/devlayer-setuid
 	cp target/coverage/devlayer target/coverage/devlayer-setuid
 	sudo chown root:root target/coverage/devlayer-setuid	
@@ -83,7 +83,7 @@ test: build-coverage-binary
 	sudo rm --one-file-system -Rf coverage
 	mkdir -p coverage/profraw
 	sudo mkdir -p /run/media/devlayer-coverage-testing
-	RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' LLVM_PROFILE_FILE="coverage/profraw/cargo-test-%p-%m.profraw" cargo test --profile coverage --features coverage -- --test-threads=1
+	RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' LLVM_PROFILE_FILE="$(CURDIR)/coverage/profraw/cargo-test-%p-%m.profraw" cargo test --profile coverage --features coverage -- --test-threads=1
 	
 coverage coverage-report: test update-coverage-report-and-show-json
 
@@ -96,8 +96,8 @@ test-with-stop-all: build-coverage-binary
 	@echo "### Running all tests including --ignored tests"
 	sudo rm --one-file-system -Rf coverage
 	mkdir -p coverage/profraw
-	RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' LLVM_PROFILE_FILE="coverage/profraw/cargo-test-%p-%m.profraw" cargo test --profile coverage --features coverage -- --test-threads=1
-	RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' LLVM_PROFILE_FILE="coverage/profraw/cargo-test-%p-%m.profraw" cargo test --profile coverage --features coverage -- --test-threads=1 --ignored
+	RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' LLVM_PROFILE_FILE="$(CURDIR)/coverage/profraw/cargo-test-%p-%m.profraw" cargo test --profile coverage --features coverage -- --test-threads=1
+	RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' LLVM_PROFILE_FILE="$(CURDIR)/coverage/profraw/cargo-test-%p-%m.profraw" cargo test --profile coverage --features coverage -- --test-threads=1 --ignored
 
 coverage-with-stop-all: test-with-stop-all update-coverage-report-and-show-json
 
@@ -114,7 +114,7 @@ update-coverage-report:
 TEST ?= test_accept
 quick-test: build-coverage-binary
 	# test_accept
-	RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' LLVM_PROFILE_FILE="coverage/profraw/cargo-test-%p-%m.profraw" cargo test --profile coverage --features coverage -- --test-threads=1 \
+	RUST_BACKTRACE=1 CARGO_INCREMENTAL=0 RUSTFLAGS='-Cinstrument-coverage' LLVM_PROFILE_FILE="$(CURDIR)/coverage/profraw/cargo-test-%p-%m.profraw" cargo test --profile coverage --features coverage -- --test-threads=1 \
 		$(TEST)
 	make update-coverage-report
 

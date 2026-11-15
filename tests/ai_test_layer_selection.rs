@@ -26,11 +26,10 @@ impl Selection {
         let mut layer = layer;
         // No --join, so the default selection applies
         layer.no_default_options = true;
-        layer.set_bind_cwd(true);
         let root = std::env::temp_dir()
             .join(format!("devlayer-coverage-sel-{}", rid()));
         std::fs::create_dir_all(&root)?;
-        layer.cwd = Some(root.clone());
+        layer.bind_cwd_in(&root);
         layer.run(&["--new", "config", "storage_dir"])?;
         let storage = PathBuf::from(layer.last_stdout.trim());
         let mut sel = Self {
