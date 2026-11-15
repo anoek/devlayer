@@ -40,7 +40,8 @@ impl Layer {
             let dir = &mount_entry.dir;
 
             // Get the uid/gid of the source directory
-            let source_stat = nix::sys::stat::lstat(dir.as_str())?;
+            let source_stat = nix::sys::stat::lstat(dir.as_str())
+                .context(format!("lstat {}", dir))?;
             let source_uid = Uid::from_raw(source_stat.st_uid);
             let source_gid = Gid::from_raw(source_stat.st_gid);
 
