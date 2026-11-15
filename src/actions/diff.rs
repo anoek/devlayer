@@ -9,23 +9,23 @@ use std::process::Command;
 
 use crate::{
     config::Config,
-    sandbox::{Sandbox, changes::EntryOperation},
+    layer::{Layer, changes::EntryOperation},
 };
 
 pub fn diff(
     config: &Config,
     json: bool,
-    sandbox: &Sandbox,
+    layer: &Layer,
     patterns: &[String],
 ) -> Result<()> {
-    trace!("Diffing sandbox {}", sandbox.name);
+    trace!("Diffing layer {}", layer.name);
 
     if json {
         return Err(anyhow::anyhow!("JSON mode is not supported for diff"));
     }
 
     let cwd = std::env::current_dir()?;
-    let all_changes = sandbox.changes(config)?;
+    let all_changes = layer.changes(config)?;
     let changes = all_changes.matching(&cwd, patterns);
 
     // Exercise `EntryOperation::Error` handling during coverage builds.
@@ -33,9 +33,9 @@ pub fn diff(
     let mut changes = changes.clone();
     #[cfg(feature = "coverage")]
     {
-        use crate::sandbox::changes::ChangeError;
+        use crate::layer::changes::ChangeError;
 
-        changes.0.push(crate::sandbox::changes::ChangeEntry {
+        changes.0.push(crate::layer::changes::ChangeEntry {
             operation: EntryOperation::Error(ChangeError::UnsupportedFileType),
             source: None,
             destination: PathBuf::from("/dev/null"),
@@ -46,7 +46,7 @@ pub fn diff(
 
     let should_colorize = SHOULD_COLORIZE.should_colorize();
     let upper_cwd_str = config.upper_cwd.to_string_lossy();
-    let replacement = format!("<{}>", sandbox.name).cyan().to_string();
+    let replacement = format!("<{}>", layer.name).cyan().to_string();
 
     #[cfg(feature = "coverage")]
     let should_colorize = if std::env::var_os("TEST_FORCE_DIFF_COLOR").is_some()

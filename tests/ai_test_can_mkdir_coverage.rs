@@ -6,9 +6,9 @@ use rstest::*;
 use std::path::Path;
 
 #[rstest]
-fn test_can_mkdir_nested_paths(mut sandbox: SandboxManager) -> Result<()> {
+fn test_can_mkdir_nested_paths(mut layer: LayerManager) -> Result<()> {
     // Create test directory
-    let test_dir = sandbox.test_filename("can-mkdir-test");
+    let test_dir = layer.test_filename("can-mkdir-test");
     std::fs::create_dir_all(&test_dir)?;
 
     // Create a deeply nested path that doesn't exist
@@ -21,7 +21,7 @@ fn test_can_mkdir_nested_paths(mut sandbox: SandboxManager) -> Result<()> {
 
     // Try to create a file in this deeply nested path that doesn't exist
     // This should trigger the can_mkdir check with multiple parent traversals
-    sandbox.run(&[
+    layer.run(&[
         "sh",
         "-c",
         &format!(
@@ -32,8 +32,8 @@ fn test_can_mkdir_nested_paths(mut sandbox: SandboxManager) -> Result<()> {
     ])?;
 
     // Verify the file was created successfully
-    sandbox.run(&["status", &test_dir])?;
-    let stdout = sandbox.last_stdout.clone();
+    layer.run(&["status", &test_dir])?;
+    let stdout = layer.last_stdout.clone();
 
     assert!(
         stdout.contains("test.txt"),
@@ -44,23 +44,21 @@ fn test_can_mkdir_nested_paths(mut sandbox: SandboxManager) -> Result<()> {
 }
 
 #[rstest]
-fn test_sandbox_creation_nested_storage(
-    mut sandbox: SandboxManager,
-) -> Result<()> {
+fn test_layer_creation_nested_storage(mut layer: LayerManager) -> Result<()> {
     let nested_storage = format!(
         "/tmp/{}",
-        sandbox.test_filename("nested/storage/path/for/sandbox")
+        layer.test_filename("nested/storage/path/for/layer")
     );
 
-    sandbox.epass(&["true"], "SANDBOX_STORAGE_DIR", &nested_storage);
-    sandbox.epass(
+    layer.epass(&["true"], "DEVLAYER_STORAGE_DIR", &nested_storage);
+    layer.epass(
         &["accept", "**/*.profraw"],
-        "SANDBOX_STORAGE_DIR",
+        "DEVLAYER_STORAGE_DIR",
         &nested_storage,
     );
 
-    sandbox.epass(&["stop"], "SANDBOX_STORAGE_DIR", &nested_storage);
-    sandbox.epass(&["delete"], "SANDBOX_STORAGE_DIR", &nested_storage);
+    layer.epass(&["stop"], "DEVLAYER_STORAGE_DIR", &nested_storage);
+    layer.epass(&["delete"], "DEVLAYER_STORAGE_DIR", &nested_storage);
 
     Ok(())
 }

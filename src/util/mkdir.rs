@@ -75,7 +75,7 @@ mod tests {
         let uid = getuid();
         let gid = getgid();
         let path = PathBuf::from(format!(
-            "/tmp/sandbox-coverage-tests-mkdir-{}",
+            "/tmp/devlayer-coverage-tests-mkdir-{}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -101,7 +101,7 @@ mod tests {
         assert!(
             mkdir(
                 &PathBuf::from(format!(
-                    "/sandbox-coverage-tests-mkdir-{}",
+                    "/devlayer-coverage-tests-mkdir-{}",
                     std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap()

@@ -1,5 +1,6 @@
 use super::impls::deserialize_level_filter;
 use super::limits::deserialize_number_or_string;
+use crate::layer::LayerOrigin;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::PathBuf};
@@ -53,14 +54,15 @@ pub enum Network {
 pub struct PartialConfig {
     #[serde(deserialize_with = "deserialize_level_filter", default)]
     pub log_level: Option<log::LevelFilter>,
-    pub name: Option<String>,
+    pub join: Option<String>,
     pub storage_dir: Option<String>,
     pub net: Option<Network>,
     pub ignored: Option<bool>,
     pub bind: Option<Vec<String>>,
     pub mask: Option<Vec<String>>,
     pub no_default_binds: Option<bool>,
-    pub audio: Option<bool>,
+    pub no_default_llm_binds: Option<bool>,
+    pub no_bind_cwd: Option<bool>,
     #[serde(deserialize_with = "deserialize_number_or_string", default)]
     pub cpus: Option<String>,
     #[serde(deserialize_with = "deserialize_number_or_string", default)]
@@ -71,8 +73,11 @@ pub struct PartialConfig {
 pub struct Config {
     pub log_level: log::LevelFilter,
     pub name: String,
+    /// Whether a new layer was asked for, with `name` generated for it,
+    /// rather than a layer to join
+    pub new_layer: bool,
     pub storage_dir: PathBuf,
-    pub sandbox_dir: PathBuf,
+    pub layer_dir: PathBuf,
     pub upper_cwd: PathBuf,
     pub overlay_cwd: PathBuf,
     pub net: Network,
@@ -80,10 +85,15 @@ pub struct Config {
     pub ignored: bool,
     pub bind_mounts: Vec<BindMount>,
     pub no_default_binds: bool,
-    pub audio: bool,
-    /// Number of CPUs the sandbox may use, None for unlimited
+    pub no_default_llm_binds: bool,
+    /// Where the layer was created and whether that directory is bound
+    pub origin: LayerOrigin,
+    /// Whether that would bind the home directory without a bind of it
+    /// being asked for, which starting the layer refuses
+    pub cwd_bind_is_home: bool,
+    /// Number of CPUs the layer may use, None for unlimited
     pub cpus: Option<f64>,
-    /// Bytes of memory the sandbox may use, None for unlimited
+    /// Bytes of memory the layer may use, None for unlimited
     pub memory: Option<u64>,
     pub config_files: Vec<PathBuf>,
 }

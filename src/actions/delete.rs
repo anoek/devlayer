@@ -1,6 +1,6 @@
-use crate::actions::list::get_sandboxes;
+use crate::actions::list::get_layers;
 use crate::config::Config;
-use crate::sandbox::Sandbox;
+use crate::layer::Layer;
 use crate::util::Lock;
 use crate::{outln, util::set_json_output};
 use anyhow::Result;
@@ -10,41 +10,41 @@ use serde_json::Value;
 use std::io::{self, Write};
 use std::path::Path;
 
-struct SandboxEntry {
+struct LayerEntry {
     name: String,
     stopped: bool,
-    sandbox: Sandbox,
+    layer: Layer,
     _lock: Box<Lock>,
 }
 
-impl SandboxEntry {
+impl LayerEntry {
     pub fn new(
-        sandboxes_storage_dir: &Path,
-        sandbox_name: &str,
+        layers_storage_dir: &Path,
+        layer_name: &str,
         stopped: bool,
     ) -> Result<Self> {
-        let (sandbox, lock) = Sandbox::get(
-            sandboxes_storage_dir,
-            sandbox_name,
+        let (layer, lock) = Layer::get(
+            layers_storage_dir,
+            layer_name,
             nix::unistd::Uid::from_raw(0),
             nix::unistd::Gid::from_raw(0),
             None,
         )?;
 
-        let sandbox = match sandbox {
-            Some(sandbox) => sandbox,
-            None => Sandbox::from_location(
-                sandboxes_storage_dir,
-                sandbox_name,
+        let layer = match layer {
+            Some(layer) => layer,
+            None => Layer::from_location(
+                layers_storage_dir,
+                layer_name,
                 nix::unistd::Uid::from_raw(0),
                 nix::unistd::Gid::from_raw(0),
             ),
         };
 
         Ok(Self {
-            name: sandbox_name.to_string(),
+            name: layer_name.to_string(),
             stopped,
-            sandbox,
+            layer,
             _lock: lock,
         })
     }
@@ -52,24 +52,24 @@ impl SandboxEntry {
 
 pub fn delete(
     config: &Config,
-    sandboxes_storage_dir: &Path,
+    layers_storage_dir: &Path,
     patterns: &[String],
     force: bool,
 ) -> Result<()> {
-    trace!("Preparing to delete sandboxes");
+    trace!("Preparing to delete layers");
 
-    let [running_sandboxes, stopped_sandboxes] = if patterns.is_empty() {
-        if Sandbox::from_location(
-            sandboxes_storage_dir,
+    let [running_layers, stopped_layers] = if patterns.is_empty() {
+        if Layer::from_location(
+            layers_storage_dir,
             &config.name,
             nix::unistd::Uid::from_raw(0),
             nix::unistd::Gid::from_raw(0),
         )
         .exists()
         {
-            // serves as a check to see if the sandbox is running or not
-            if Sandbox::get(
-                sandboxes_storage_dir,
+            // serves as a check to see if the layer is running or not
+            if Layer::get(
+                layers_storage_dir,
                 &config.name,
                 nix::unistd::Uid::from_raw(0),
                 nix::unistd::Gid::from_raw(0),
@@ -86,74 +86,73 @@ pub fn delete(
             [vec![], vec![]]
         }
     } else {
-        get_sandboxes(sandboxes_storage_dir, patterns)?
+        get_layers(layers_storage_dir, patterns)?
     };
     /*
-    let mut sandbox_entries = Vec::new();
-    for sandbox_name in running_sandboxes {
-        sandbox_entries.push(SandboxEntry::new(
-            sandboxes_storage_dir,
-            sandbox_name.as_str(),
+    let mut layer_entries = Vec::new();
+    for layer_name in running_layers {
+        layer_entries.push(LayerEntry::new(
+            layers_storage_dir,
+            layer_name.as_str(),
             false,
         )?);
     }
-    for sandbox_name in stopped_sandboxes {
-        sandbox_entries.push(SandboxEntry::new(
-            sandboxes_storage_dir,
-            sandbox_name.as_str(),
+    for layer_name in stopped_layers {
+        layer_entries.push(LayerEntry::new(
+            layers_storage_dir,
+            layer_name.as_str(),
             true,
         )?);
     }
     */
 
-    if stopped_sandboxes.is_empty() && running_sandboxes.is_empty() {
+    if stopped_layers.is_empty() && running_layers.is_empty() {
         if patterns.is_empty() {
             outln!(
-                "No sandbox by the name of '{}' found to delete.",
+                "No layer by the name of '{}' found to delete.",
                 config.name
             );
         } else {
-            outln!("No sandboxes found matching the specified patterns.");
+            outln!("No layers found matching the specified patterns.");
         }
         return Ok(());
     }
 
-    delete_sandboxes(
+    delete_layers(
         config,
-        sandboxes_storage_dir,
-        &running_sandboxes,
-        &stopped_sandboxes,
+        layers_storage_dir,
+        &running_layers,
+        &stopped_layers,
         force,
     )
 }
 
-/// Lists the given sandboxes, asks for confirmation unless `force` is set,
+/// Lists the given layers, asks for confirmation unless `force` is set,
 /// then deletes them.
-pub fn delete_sandboxes(
+pub fn delete_layers(
     config: &Config,
-    sandboxes_storage_dir: &Path,
-    running_sandboxes: &[String],
-    stopped_sandboxes: &[String],
+    layers_storage_dir: &Path,
+    running_layers: &[String],
+    stopped_layers: &[String],
     force: bool,
 ) -> Result<()> {
-    // Show sandboxes that will be deleted and ask for confirmation
+    // Show layers that will be deleted and ask for confirmation
     if !force {
-        outln!("The following sandboxes will be deleted:");
-        for (list, stopped) in
-            [(running_sandboxes, false), (stopped_sandboxes, true)]
+        outln!("The following layers will be deleted:");
+        for (list, stopped) in [(running_layers, false), (stopped_layers, true)]
         {
             for name in list {
-                let sandbox_entry = SandboxEntry::new(
-                    sandboxes_storage_dir,
+                let layer_entry = LayerEntry::new(
+                    layers_storage_dir,
                     name.as_str(),
                     stopped,
                 )?;
 
                 let modifications =
-                    sandbox_entry.sandbox.count_upper_entries(config)?;
+                    layer_entry.layer.count_upper_entries(config)?;
                 let color = if modifications.not_ignored > 0 {
                     Color::Red
-                } else if !sandbox_entry.stopped {
+                } else if !layer_entry.stopped {
                     Color::Green
                 } else {
                     Color::White
@@ -161,12 +160,12 @@ pub fn delete_sandboxes(
 
                 outln!(
                     "  {} {} ({} entries, {} ignored)",
-                    if sandbox_entry.stopped {
+                    if layer_entry.stopped {
                         "stopped"
                     } else {
                         "running"
                     },
-                    sandbox_entry.name.color(color),
+                    layer_entry.name.color(color),
                     modifications.not_ignored,
                     modifications.ignored
                 );
@@ -174,7 +173,7 @@ pub fn delete_sandboxes(
         }
 
         // Use eprint! for the prompt since print! is not allowed
-        eprint!("\nAre you sure you want to delete these sandboxes? [y/N] ");
+        eprint!("\nAre you sure you want to delete these layers? [y/N] ");
         let _ = io::stderr().flush();
 
         let mut response = String::new();
@@ -186,40 +185,35 @@ pub fn delete_sandboxes(
         }
     }
 
-    // Delete each sandbox
-    let mut deleted_sandboxes = Vec::new();
+    // Delete each layer
+    let mut deleted_layers = Vec::new();
     let mut errors = Vec::new();
 
-    for (list, stopped) in
-        [(running_sandboxes, false), (stopped_sandboxes, true)]
-    {
+    for (list, stopped) in [(running_layers, false), (stopped_layers, true)] {
         for name in list {
-            let sandbox_entry = SandboxEntry::new(
-                sandboxes_storage_dir,
-                name.as_str(),
-                stopped,
-            )?;
+            let layer_entry =
+                LayerEntry::new(layers_storage_dir, name.as_str(), stopped)?;
 
-            trace!("Deleting sandbox: {}", sandbox_entry.name);
-            match sandbox_entry.sandbox.delete() {
+            trace!("Deleting layer: {}", layer_entry.name);
+            match layer_entry.layer.delete() {
                 Ok(()) => {
-                    outln!("Deleted sandbox: {}", sandbox_entry.name.green());
-                    deleted_sandboxes
-                        .push(Value::String(sandbox_entry.name.clone()));
+                    outln!("Deleted layer: {}", layer_entry.name.green());
+                    deleted_layers
+                        .push(Value::String(layer_entry.name.clone()));
                 }
                 Err(e) => {
-                    outln!("Error deleting sandbox: {}", e);
+                    outln!("Error deleting layer: {}", e);
                     errors.push(Value::String(e.to_string()));
                 }
             }
         }
     }
 
-    outln!("{} sandboxes deleted", deleted_sandboxes.len());
+    outln!("{} layers deleted", deleted_layers.len());
 
     // Set JSON output
     set_json_output("status", &Value::String("success".to_string()));
-    set_json_output("deleted", &Value::Array(deleted_sandboxes));
+    set_json_output("deleted", &Value::Array(deleted_layers));
     set_json_output("errors", &Value::Array(errors));
 
     Ok(())

@@ -5,8 +5,8 @@ use fixtures::*;
 use rstest::*;
 
 #[rstest]
-fn test_no_network(mut sandbox: SandboxManager) -> Result<()> {
-    assert!(sandbox.xfail(&[
+fn test_no_network(mut layer: LayerManager) -> Result<()> {
+    assert!(layer.xfail(&[
         "--net=none",
         "ping",
         "-c",
@@ -15,17 +15,13 @@ fn test_no_network(mut sandbox: SandboxManager) -> Result<()> {
         "1",
         "127.0.0.1"
     ]));
-    assert!(
-        sandbox
-            .last_stderr
-            .contains("Creating new network namespace")
-    );
+    assert!(layer.last_stderr.contains("Creating new network namespace"));
     Ok(())
 }
 
 #[rstest]
-fn test_network(mut sandbox: SandboxManager) -> Result<()> {
-    let status = sandbox.run(&[
+fn test_network(mut layer: LayerManager) -> Result<()> {
+    let status = layer.run(&[
         "--net=host",
         "ping",
         "-c",
@@ -34,7 +30,7 @@ fn test_network(mut sandbox: SandboxManager) -> Result<()> {
         "1",
         "127.0.0.1",
     ])?;
-    assert!(sandbox.last_stderr.contains("Using host network"));
+    assert!(layer.last_stderr.contains("Using host network"));
     assert!(status.status.success());
     Ok(())
 }

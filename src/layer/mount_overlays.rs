@@ -1,5 +1,5 @@
 use crate::config::Config;
-use crate::sandbox::{Sandbox, SandboxSettings};
+use crate::layer::{Layer, LayerSettings};
 use crate::util::{can_mkdir, mkdir};
 use anyhow::{Context, Result, anyhow};
 use log::debug;
@@ -22,12 +22,12 @@ pub struct MountHash {
     pub dir: String,
 }
 
-impl Sandbox {
+impl Layer {
     pub fn mount_overlays(&self, config: &Config) -> Result<Vec<MountHash>> {
         let mounts = self.determine_mounts(config)?;
 
         can_mkdir(&self.base, self.uid, self.gid).context(format!(
-                    "Failed to check if we can create the base directory {:?} for the sandbox failed",
+                    "Failed to check if we can create the base directory {:?} for the layer failed",
                     self.base
                 ))?;
         mkdir(&self.base, self.uid, self.gid)?;
@@ -40,7 +40,8 @@ impl Sandbox {
             let dir = &mount_entry.dir;
 
             // Get the uid/gid of the source directory
-            let source_stat = nix::sys::stat::lstat(dir.as_str())?;
+            let source_stat = nix::sys::stat::lstat(dir.as_str())
+                .context(format!("lstat {}", dir))?;
             let source_uid = Uid::from_raw(source_stat.st_uid);
             let source_gid = Gid::from_raw(source_stat.st_gid);
 
@@ -105,11 +106,11 @@ impl Sandbox {
 
         result_mounts.sort_by(|a, b| a.dir.cmp(&b.dir));
 
-        // Save sandbox settings to settings.json in sandbox base directory
-        let settings = SandboxSettings::from_config(config, &result_mounts);
+        // Save layer settings to settings.json in layer base directory
+        let settings = LayerSettings::from_config(config, &result_mounts);
         settings
             .save_to_file(&self.settings_path())
-            .context("Failed to save sandbox settings")?;
+            .context("Failed to save layer settings")?;
 
         Ok(result_mounts)
     }
@@ -119,14 +120,15 @@ impl Sandbox {
     }
 
     pub fn determine_mounts(&self, config: &Config) -> Result<Vec<MountHash>> {
-        // Check if we have a settings.json file in our storage dir (for nested sandboxes)
-        let settings_json = Path::new(&config.storage_dir).join("settings.json");
+        // Check if we have a settings.json file in our storage dir (for nested layers)
+        let settings_json =
+            Path::new(&config.storage_dir).join("settings.json");
         if settings_json.exists() {
             debug!(
-                "It looks like we are in a nested sandbox, reading mounts from {}",
+                "It looks like we are in a nested layer, reading mounts from {}",
                 settings_json.display()
             );
-            let parent_settings = SandboxSettings::load_from_file(&settings_json)
+            let parent_settings = LayerSettings::load_from_file(&settings_json)
                 .context(format!(
                     "Failed to read parent settings.json from {}",
                     settings_json.display()
@@ -169,7 +171,7 @@ impl Sandbox {
                 CStr::from_ptr((*mnt).mnt_type).to_string_lossy()
             });
 
-            /* Mount / regardless of type, in docker or another sandbox it is expected
+            /* Mount / regardless of type, in docker or another layer it is expected
              * to be an overlayfs. For all other file systems though, skip them if
              * they don't seem to be real file systems. */
             if mnt_dir != "/"
@@ -198,7 +200,7 @@ impl Sandbox {
 
         if mounts.is_empty() {
             return Err(anyhow!(
-                "No suitable mounts found for sandbox, something is very wrong"
+                "No suitable mounts found for layer, something is very wrong"
                     .to_string(),
             ));
         }

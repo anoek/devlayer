@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(Parser, Clone, Debug)]
 #[command(version, about, long_about = None,
-    override_usage = "\n    sandbox [OPTIONS] [ACTION] [ACTION_ARGUMENTS...]\n    sandbox [OPTIONS] <SANDBOXED_COMMAND ...>")]
+    override_usage = "\n    devlayer [OPTIONS] [ACTION] [ACTION_ARGUMENTS...]\n    devlayer [OPTIONS] <COMMAND ...>")]
 pub struct Args {
     /********************/
     /* Flags and settings */
@@ -23,24 +23,28 @@ pub struct Args {
     )]
     pub log_level: Option<log::LevelFilter>,
 
-    /// Name of the sandbox, defaults to "sandbox"
-    #[arg(long, global = true, value_hint = clap::ValueHint::Other, add = ArgValueCompleter::new(sandbox_name_completion), conflicts_with_all = &["new", "last"])]
-    pub name: Option<String>,
+    /// Join the named layer, creating it if it does not exist yet. Also settable
+    /// with `join` in a config file or DEVLAYER_JOIN.
+    #[arg(long, global = true, value_hint = clap::ValueHint::Other, add = ArgValueCompleter::new(layer_name_completion), conflicts_with_all = &["new", "last"])]
+    pub join: Option<String>,
 
-    /// Create a new sandbox with an auto-generated timestamp name
-    #[arg(long, global = true, conflicts_with_all = &["name", "last"])]
+    /// Create a new layer with an auto-generated timestamp name. This is the
+    /// default when running a command.
+    #[arg(long, global = true, conflicts_with_all = &["join", "last"])]
     pub new: bool,
 
-    /// Use the most recently created sandbox
-    #[arg(long, global = true, conflicts_with_all = &["name", "new"])]
+    /// Use the newest layer created in the current directory, or else in the
+    /// nearest parent directory that has layers. This is the default for
+    /// status, diff, accept, reject, and stop/delete without patterns.
+    #[arg(long, global = true, conflicts_with_all = &["join", "new"])]
     pub last: bool,
 
-    /// Base storage directory for all sandboxes. Defaults to `~/.sandboxes/`
+    /// Base storage directory for all layers. Defaults to `~/.devlayer/`
     #[arg(long, global = true)]
     pub storage_dir: Option<String>,
 
-    /// Enable host (or other) network. Defaults to `none`, which disables network access. If you
-    /// want to enable network access by default you can store net="host" in a config file.
+    /// Set network access. Defaults to `host`. Use `--net=none` (or net="none" in a config
+    /// file) to disable network access.
     #[arg(
         long,
         global = true,
@@ -51,7 +55,7 @@ pub struct Args {
         )]
     pub net: Option<Network>,
 
-    /// Bind mount directories or files into the sandbox. Can be specified multiple times.
+    /// Bind mount directories or files into the layer. Can be specified multiple times.
     /// Format: source:target or just path (mounts to same path). Multiple paths can be
     /// specified by using --bind multiple times or as a comma-separated list.
     #[arg(
@@ -72,18 +76,23 @@ pub struct Args {
     )]
     pub mask: Option<Vec<String>>,
 
-    /// Disable default system bind mounts (e.g., /dev/fuse, D-Bus sockets, user directories)
+    /// Disable default system bind mounts (e.g., /dev/fuse, D-Bus sockets, audio devices, user directories)
     #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
     pub no_default_binds: bool,
 
-    /// Allow access to audio devices (PipeWire, PulseAudio, and ALSA). Note this
-    /// also allows recording from microphones.
+    /// Disable default binds of well-known AI tool config and state, such as
+    /// ~/.claude, ~/.claude.json, ~/.codex and ~/.gemini
     #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
-    pub audio: bool,
+    pub no_default_llm_binds: bool,
 
-    /// Limit how many CPUs the sandbox can use. Fractional values such as 1.5
+    /// Do not bind the current directory into the layer. By default it is bound
+    /// read-write, so changes there go straight to the host.
+    #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
+    pub no_bind_cwd: bool,
+
+    /// Limit how many CPUs the layer can use. Fractional values such as 1.5
     /// are allowed. Negative values mean all but that many CPUs, so -2 on a
-    /// 32 CPU machine allows the sandbox to use 30. Use "unlimited" to remove
+    /// 32 CPU machine allows the layer to use 30. Use "unlimited" to remove
     /// a limit set in a config file. Requires cgroup v2.
     #[arg(
         long,
@@ -93,13 +102,13 @@ pub struct Args {
     )]
     pub cpus: Option<String>,
 
-    /// Limit how much memory the sandbox can use, for example 512M or 4G.
-    /// Swap is not available to sandboxes with a memory limit. Use
+    /// Limit how much memory the layer can use, for example 512M or 4G.
+    /// Swap is not available to layers with a memory limit. Use
     /// "unlimited" to remove a limit set in a config file. Requires cgroup v2.
     #[arg(long, global = true, value_name = "SIZE")]
     pub memory: Option<String>,
 
-    /// Formats action output as a JSON blob. Does nothing for sandboxed commands.
+    /// Formats action output as a JSON blob. Does nothing for layered commands.
     #[arg(long, global = true, action = clap::ArgAction::SetTrue)]
     pub json: bool,
 
@@ -128,18 +137,18 @@ pub struct Args {
     pub action: Option<Action>,
 
     /*********************/
-    /* Sandboxed Command */
+    /* Layered Command */
     /*********************/
-    /// The command to run in the sandbox. If no command is provided, the current shell will be used.
-    /// If the sandbox is not running, it will be started with the command.
+    /// The command to run in the layer. If no command is provided, the current shell will be used.
+    /// If the layer is not running, it will be started with the command.
     #[arg(
         trailing_var_arg = true,
         allow_hyphen_values = true,
         num_args = 0..,
         value_parser = validate_command,
-        help_heading = "Sandboxed Command",
+        help_heading = "Command",
     )]
-    pub sandboxed_command: Option<Vec<String>>,
+    pub layered_command: Option<Vec<String>>,
 }
 
 #[derive(clap::Subcommand, Clone, Debug)]
@@ -152,69 +161,71 @@ pub enum Action {
         keys: Option<Vec<String>>,
     },
 
-    /// List running sandboxes matching these patterns (defaults to all)
+    /// List running layers matching these patterns (defaults to all)
     List {
-        /// Patterns of sandboxes to list
+        /// Patterns of layers to list
         #[arg(value_name = "PATTERNS", num_args = 0.., flatten = true)]
         patterns: Option<Vec<String>>,
     },
 
-    /// Show status of the sandbox matching the patterns in the current directory, or specified
-    /// patterns. Use `status /` to show status of all files in the sandbox.
+    /// Show the changes in the layer, all of them by default. Patterns are relative to the
+    /// current directory, so `status .` shows only changes under it.
     Status {
         /// Patterns of files to show
         #[arg(value_name = "PATTERNS", num_args = 0..)]
         patterns: Option<Vec<String>>,
     },
 
-    /// Show changes in the sandbox relative to the current changes
+    /// Show the content of the changes in the layer, all of them by default
     Diff {
         /// Patterns of files to diff
         #[arg(value_name = "PATTERNS", num_args = 0..)]
         patterns: Option<Vec<String>>,
     },
 
-    /// Accept changes in the sandbox
+    /// Accept the changes matching the patterns. At least one pattern is required; use
+    /// `accept /` to accept every change in the layer.
     Accept {
         #[arg(value_name = "PATTERNS", num_args = 0..)]
         patterns: Option<Vec<String>>,
     },
 
-    /// Reject changes in the sandbox
+    /// Reject the changes matching the patterns. At least one pattern is required; use
+    /// `reject /` to reject every change in the layer.
     Reject {
         #[arg(value_name = "PATTERNS", num_args = 0..)]
         patterns: Option<Vec<String>>,
     },
 
     /// Synchronize changes that might have occurred in your host
-    /// file system so that they are reflected in running sandboxes.
+    /// file system so that they are reflected in running layers.
     Sync,
 
-    /// Kill all processes in the sandbox and unmount the filesystems.
+    /// Kill all processes in the layer and unmount the filesystems.
     /// Note this will not reject any changes.
     Stop {
-        /// Kill all sandboxes
+        /// Kill all layers
         #[arg(long)]
         all: bool,
 
-        /// Patterns of sandboxes to stop
+        /// Patterns of layers to stop
         #[arg(value_name = "PATTERNS", num_args = 0.., conflicts_with = "all")]
         patterns: Option<Vec<String>>,
     },
 
-    /// Delete sandboxes and all associated files
+    /// Delete layers and all associated files
     Delete {
         /// Skip confirmation prompt
         #[arg(short = 'y', long)]
         yes: bool,
 
-        /// Patterns of sandboxes to delete
+        /// Patterns of layers to delete
         #[arg(value_name = "PATTERNS", num_args = 0..)]
         patterns: Option<Vec<String>>,
     },
 
-    /// Delete stopped ephemeral sandboxes older than a week, and all
-    /// sandboxes left behind by the test suite
+    /// Delete stopped ephemeral layers older than a week, and all
+    /// layers left behind by the test suite
     Clean {
         /// Skip confirmation prompt
         #[arg(short = 'y', long)]
@@ -222,7 +233,7 @@ pub enum Action {
     },
 }
 
-pub fn sandbox_name_completion(
+pub fn layer_name_completion(
     current: &std::ffi::OsStr,
 ) -> Vec<CompletionCandidate> {
     let ugh = resolve_uid_gid_home();
@@ -245,9 +256,9 @@ pub fn sandbox_name_completion(
         Err(_) => return completions,
     };
 
-    let sandboxes_storage_dir = config.storage_dir;
+    let layers_storage_dir = config.storage_dir;
 
-    let entries = match std::fs::read_dir(sandboxes_storage_dir) {
+    let entries = match std::fs::read_dir(layers_storage_dir) {
         Ok(entries) => entries,
         Err(_) => return completions,
     };

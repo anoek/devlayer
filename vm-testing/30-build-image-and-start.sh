@@ -8,7 +8,7 @@ VCPUS=$(nproc)
 sudo virsh destroy coverage-test || true
 sudo virsh undefine coverage-test || true
 
-rm -f sandbox-*.crate
+rm -f devlayer-*.crate
 
 if [ ! -f vendor.tar.gz ]; then
     cd ..
@@ -19,10 +19,10 @@ fi
 
 cd ..
 cargo package --allow-dirty --no-verify
-cp target/package/sandbox-*.crate vm-testing/
+cp target/package/devlayer-*.crate vm-testing/
 cd vm-testing
 
-CRATE=$(ls sandbox-*.crate)
+CRATE=$(ls devlayer-*.crate)
 
 sudo cp images/coverage-prepared.qcow2 images/coverage-test.qcow2
 
@@ -37,9 +37,9 @@ EOF
 
 
 sudo virt-customize -a images/coverage-test.qcow2 \
-    --copy-in vendor.tar.gz:/home/sandbox/ \
-    --copy-in $CRATE:/home/sandbox/ \
-    --copy-in generated/cargo_config.toml:/home/sandbox/
+    --copy-in vendor.tar.gz:/home/devlayer/ \
+    --copy-in $CRATE:/home/devlayer/ \
+    --copy-in generated/cargo_config.toml:/home/devlayer/
 
 sudo virt-install --name coverage-test \
                     --memory $MEM \

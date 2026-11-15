@@ -2,65 +2,60 @@ use anyhow::Result;
 use colored::*;
 use fast_glob::glob_match;
 use log::trace;
-use nix::{sys::signal::kill, unistd::Pid};
 use serde_json::Value;
 use std::path::Path;
 
 use crate::{
     outln,
-    util::{get_sandbox_pid_path, set_json_output},
+    util::{get_running_layer_pid, set_json_output},
 };
 
-pub fn list(sandboxes_storage_dir: &Path, patterns: &[String]) -> Result<()> {
-    trace!("Listing sandboxes");
+pub fn list(layers_storage_dir: &Path, patterns: &[String]) -> Result<()> {
+    trace!("Listing layers");
 
-    let [running_sandboxes, stopped_sandboxes] =
-        get_sandboxes(sandboxes_storage_dir, patterns)?;
+    let [running_layers, stopped_layers] =
+        get_layers(layers_storage_dir, patterns)?;
 
-    if !running_sandboxes.is_empty() {
-        outln!("Running sandboxes:");
-        for sandbox in &running_sandboxes {
-            outln!("{}", sandbox);
+    if !running_layers.is_empty() {
+        outln!("Running layers:");
+        for layer in &running_layers {
+            outln!("{}", layer);
         }
     }
 
-    if !running_sandboxes.is_empty() && !stopped_sandboxes.is_empty() {
+    if !running_layers.is_empty() && !stopped_layers.is_empty() {
         outln!("");
     }
 
-    if !stopped_sandboxes.is_empty() {
-        outln!("{}", "Stopped sandboxes:".dimmed());
-        for sandbox in &stopped_sandboxes {
-            outln!("{}", sandbox.dimmed());
+    if !stopped_layers.is_empty() {
+        outln!("{}", "Stopped layers:".dimmed());
+        for layer in &stopped_layers {
+            outln!("{}", layer.dimmed());
         }
     }
 
     set_json_output(
-        "running_sandboxes",
-        &Value::Array(
-            running_sandboxes.into_iter().map(Value::String).collect(),
-        ),
+        "running_layers",
+        &Value::Array(running_layers.into_iter().map(Value::String).collect()),
     );
     set_json_output(
-        "stopped_sandboxes",
-        &Value::Array(
-            stopped_sandboxes.into_iter().map(Value::String).collect(),
-        ),
+        "stopped_layers",
+        &Value::Array(stopped_layers.into_iter().map(Value::String).collect()),
     );
 
     Ok(())
 }
 
-pub fn get_sandboxes(
-    sandboxes_storage_dir: &Path,
+pub fn get_layers(
+    layers_storage_dir: &Path,
     patterns: &[String],
 ) -> Result<[Vec<String>; 2]> {
-    let mut running_sandboxes: Vec<String> = Vec::new();
-    let mut stopped_sandboxes: Vec<String> = Vec::new();
+    let mut running_layers: Vec<String> = Vec::new();
+    let mut stopped_layers: Vec<String> = Vec::new();
 
-    let sandboxes = sandboxes_storage_dir.read_dir()?;
-    for sandbox in sandboxes {
-        let entry = sandbox?;
+    let layers = layers_storage_dir.read_dir()?;
+    for layer in layers {
+        let entry = layer?;
         let path = entry.path();
         let filename = path
             .components()
@@ -68,41 +63,27 @@ pub fn get_sandboxes(
             .expect("Failed to get filename")
             .as_os_str();
         if filename.to_string_lossy().ends_with(".lock") {
-            let sandbox_name =
+            let layer_name =
                 filename.to_string_lossy()[..filename.len() - 5].to_string();
 
             if patterns.is_empty()
                 || patterns
                     .iter()
-                    .any(|pattern| glob_match(pattern, &sandbox_name))
+                    .any(|pattern| glob_match(pattern, &layer_name))
             {
-                let pid_file =
-                    get_sandbox_pid_path(sandboxes_storage_dir, &sandbox_name);
-                if pid_file.exists() {
-                    let pid = std::fs::read_to_string(pid_file)?;
-
-                    match pid.parse::<i32>() {
-                        Ok(pid) => {
-                            let pid = Pid::from_raw(pid);
-                            if kill(pid, None).is_ok() {
-                                running_sandboxes.push(sandbox_name);
-                            } else {
-                                stopped_sandboxes.push(sandbox_name);
-                            }
-                        }
-                        Err(_) => {
-                            stopped_sandboxes.push(sandbox_name);
-                        }
-                    }
+                if get_running_layer_pid(layers_storage_dir, &layer_name)
+                    .is_some()
+                {
+                    running_layers.push(layer_name);
                 } else {
-                    stopped_sandboxes.push(sandbox_name);
+                    stopped_layers.push(layer_name);
                 }
             }
         }
     }
 
-    running_sandboxes.sort();
-    stopped_sandboxes.sort();
+    running_layers.sort();
+    stopped_layers.sort();
 
-    Ok([running_sandboxes, stopped_sandboxes])
+    Ok([running_layers, stopped_layers])
 }

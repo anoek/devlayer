@@ -7,19 +7,19 @@ use std::path::Path;
 
 #[rstest]
 fn test_resolve_ignores_with_preference_upper_exists(
-    mut sandbox: SandboxManager,
+    mut layer: LayerManager,
 ) -> Result<()> {
-    sandbox.set_ignored(false);
+    layer.set_ignored(false);
     // Create test directory using test_filename
-    let test_dir = sandbox.test_filename("resolve-ignores-upper-test");
+    let test_dir = layer.test_filename("resolve-ignores-upper-test");
     std::fs::create_dir_all(&test_dir)?;
     let sub_dir = Path::new(&test_dir).join("test");
     std::fs::create_dir_all(&sub_dir)?;
 
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
-        format!("generated-test-data/{}/.gitignore", &sandbox.name);
-    sandbox.run(&[
+        format!("generated-test-data/{}/.gitignore", &layer.name);
+    layer.run(&[
         "sh",
         "-c",
         &format!("echo '!*/' > {}", parent_gitignore_path),
@@ -29,7 +29,7 @@ fn test_resolve_ignores_with_preference_upper_exists(
     // Should use upper's .gitignore and ignore lower's
 
     // Create upper .gitignore that ignores "upper-pattern"
-    sandbox.run(&[
+    layer.run(&[
         "sh",
         "-c",
         &format!(
@@ -38,13 +38,13 @@ fn test_resolve_ignores_with_preference_upper_exists(
         ),
     ])?;
 
-    // Create files to test within the sandbox
-    sandbox.run(&["touch", sub_dir.join("upper-pattern").to_str().unwrap()])?;
-    sandbox.run(&["touch", sub_dir.join("other-file").to_str().unwrap()])?;
+    // Create files to test within the layer
+    layer.run(&["touch", sub_dir.join("upper-pattern").to_str().unwrap()])?;
+    layer.run(&["touch", sub_dir.join("other-file").to_str().unwrap()])?;
 
     // Run status without --ignored flag
-    sandbox.run(&["status", &test_dir])?;
-    let stdout = sandbox.last_stdout.clone();
+    layer.run(&["status", &test_dir])?;
+    let stdout = layer.last_stdout.clone();
 
     // upper-pattern should be ignored, other-file should be shown
     assert!(
@@ -61,17 +61,17 @@ fn test_resolve_ignores_with_preference_upper_exists(
 
 #[rstest]
 fn test_resolve_ignores_with_preference_fallback_to_lower(
-    mut sandbox: SandboxManager,
+    mut layer: LayerManager,
 ) -> Result<()> {
-    sandbox.set_ignored(false);
+    layer.set_ignored(false);
     // Create test directory using test_filename
-    let test_dir = sandbox.test_filename("resolve-ignores-fallback-test");
+    let test_dir = layer.test_filename("resolve-ignores-fallback-test");
     std::fs::create_dir_all(&test_dir)?;
 
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
-        format!("generated-test-data/{}/.gitignore", &sandbox.name);
-    sandbox.run(&[
+        format!("generated-test-data/{}/.gitignore", &layer.name);
+    layer.run(&[
         "sh",
         "-c",
         &format!("echo '!*/' > {}", parent_gitignore_path),
@@ -83,7 +83,7 @@ fn test_resolve_ignores_with_preference_fallback_to_lower(
     std::fs::create_dir_all(&child_dir)?;
 
     // Only parent has .gitignore
-    sandbox.run(&[
+    layer.run(&[
         "sh",
         "-c",
         &format!(
@@ -93,12 +93,12 @@ fn test_resolve_ignores_with_preference_fallback_to_lower(
     ])?;
 
     // Create files in child directory
-    sandbox
+    layer
         .run(&["touch", child_dir.join("parent-pattern").to_str().unwrap()])?;
-    sandbox.run(&["touch", child_dir.join("other-file").to_str().unwrap()])?;
+    layer.run(&["touch", child_dir.join("other-file").to_str().unwrap()])?;
 
-    sandbox.run(&["status", &test_dir])?;
-    let stdout = sandbox.last_stdout.clone();
+    layer.run(&["status", &test_dir])?;
+    let stdout = layer.last_stdout.clone();
 
     // Parent's gitignore should apply to child
     assert!(
@@ -114,20 +114,18 @@ fn test_resolve_ignores_with_preference_fallback_to_lower(
 }
 
 #[rstest]
-fn test_resolve_ignores_no_lower_dir(
-    mut sandbox: SandboxManager,
-) -> Result<()> {
-    sandbox.set_ignored(false);
+fn test_resolve_ignores_no_lower_dir(mut layer: LayerManager) -> Result<()> {
+    layer.set_ignored(false);
     // Create test directory using test_filename
-    let test_dir = sandbox.test_filename("resolve-no-lower-test");
+    let test_dir = layer.test_filename("resolve-no-lower-test");
     std::fs::create_dir_all(&test_dir)?;
     let empty_dir = Path::new(&test_dir).join("empty");
     std::fs::create_dir_all(&empty_dir)?;
 
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
-        format!("generated-test-data/{}/.gitignore", &sandbox.name);
-    sandbox.run(&[
+        format!("generated-test-data/{}/.gitignore", &layer.name);
+    layer.run(&[
         "sh",
         "-c",
         &format!("echo '!*/' > {}", parent_gitignore_path),
@@ -136,10 +134,10 @@ fn test_resolve_ignores_no_lower_dir(
     // Test with a directory that has no ignore files
 
     // Create a file - should not be ignored since there are no ignore files
-    sandbox.run(&["touch", empty_dir.join("test-file").to_str().unwrap()])?;
+    layer.run(&["touch", empty_dir.join("test-file").to_str().unwrap()])?;
 
-    sandbox.run(&["status", &test_dir])?;
-    let stdout = sandbox.last_stdout.clone();
+    layer.run(&["status", &test_dir])?;
+    let stdout = layer.last_stdout.clone();
 
     println!("Status output:\n{}", stdout);
 
@@ -152,27 +150,25 @@ fn test_resolve_ignores_no_lower_dir(
 }
 
 #[rstest]
-fn test_resolve_ignores_empty_gitignore(
-    mut sandbox: SandboxManager,
-) -> Result<()> {
-    sandbox.set_ignored(false);
+fn test_resolve_ignores_empty_gitignore(mut layer: LayerManager) -> Result<()> {
+    layer.set_ignored(false);
     // Create test directory using test_filename
-    let test_dir = sandbox.test_filename("resolve-empty-test");
+    let test_dir = layer.test_filename("resolve-empty-test");
     std::fs::create_dir_all(&test_dir)?;
     let empty_ignore_dir = Path::new(&test_dir).join("empty-ignore");
     std::fs::create_dir_all(&empty_ignore_dir)?;
 
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
-        format!("generated-test-data/{}/.gitignore", &sandbox.name);
-    sandbox.run(&[
+        format!("generated-test-data/{}/.gitignore", &layer.name);
+    layer.run(&[
         "sh",
         "-c",
         &format!("echo '!*/' > {}", parent_gitignore_path),
     ])?;
 
     // Create an empty .gitignore file
-    sandbox.run(&[
+    layer.run(&[
         "sh",
         "-c",
         &format!(
@@ -182,18 +178,18 @@ fn test_resolve_ignores_empty_gitignore(
     ])?;
 
     // Create test files
-    sandbox.run(&[
+    layer.run(&[
         "touch",
         empty_ignore_dir.join("test-pattern").to_str().unwrap(),
     ])?;
-    sandbox.run(&[
+    layer.run(&[
         "touch",
         empty_ignore_dir.join("other-file").to_str().unwrap(),
     ])?;
 
     // Both files should be included since .gitignore is empty
-    sandbox.run(&["status", &test_dir])?;
-    let stdout = sandbox.last_stdout.clone();
+    layer.run(&["status", &test_dir])?;
+    let stdout = layer.last_stdout.clone();
 
     // Empty .gitignore means nothing is ignored
     assert!(
@@ -210,26 +206,26 @@ fn test_resolve_ignores_empty_gitignore(
 
 #[rstest]
 fn test_resolve_ignores_with_both_gitignore_and_ignore(
-    mut sandbox: SandboxManager,
+    mut layer: LayerManager,
 ) -> Result<()> {
-    sandbox.set_ignored(false);
+    layer.set_ignored(false);
     // Create test directory using test_filename
-    let test_dir = sandbox.test_filename("resolve-both-ignore-files-test");
+    let test_dir = layer.test_filename("resolve-both-ignore-files-test");
     std::fs::create_dir_all(&test_dir)?;
     let sub_dir = Path::new(&test_dir).join("test");
     std::fs::create_dir_all(&sub_dir)?;
 
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
-        format!("generated-test-data/{}/.gitignore", &sandbox.name);
-    sandbox.run(&[
+        format!("generated-test-data/{}/.gitignore", &layer.name);
+    layer.run(&[
         "sh",
         "-c",
         &format!("echo '!*/' > {}", parent_gitignore_path),
     ])?;
 
     // Create both .gitignore and .ignore files
-    sandbox.run(&[
+    layer.run(&[
         "sh",
         "-c",
         &format!(
@@ -237,7 +233,7 @@ fn test_resolve_ignores_with_both_gitignore_and_ignore(
             sub_dir.join(".gitignore").to_str().unwrap()
         ),
     ])?;
-    sandbox.run(&[
+    layer.run(&[
         "sh",
         "-c",
         &format!(
@@ -247,14 +243,13 @@ fn test_resolve_ignores_with_both_gitignore_and_ignore(
     ])?;
 
     // Create test files
-    sandbox
+    layer
         .run(&["touch", sub_dir.join("gitignore-pattern").to_str().unwrap()])?;
-    sandbox
-        .run(&["touch", sub_dir.join("ignore-pattern").to_str().unwrap()])?;
-    sandbox.run(&["touch", sub_dir.join("other-file").to_str().unwrap()])?;
+    layer.run(&["touch", sub_dir.join("ignore-pattern").to_str().unwrap()])?;
+    layer.run(&["touch", sub_dir.join("other-file").to_str().unwrap()])?;
 
-    sandbox.run(&["status", &test_dir])?;
-    let stdout = sandbox.last_stdout.clone();
+    layer.run(&["status", &test_dir])?;
+    let stdout = layer.last_stdout.clone();
 
     // Both patterns should be applied
     assert!(

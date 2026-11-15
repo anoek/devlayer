@@ -7,28 +7,28 @@ use std::path::Path;
 
 #[rstest]
 fn test_accept_directory_removal_counting(
-    mut sandbox: SandboxManager,
+    mut layer: LayerManager,
 ) -> Result<()> {
     // Create a directory with multiple files inside
-    let dirname = sandbox.test_filename("dir-with-files");
+    let dirname = layer.test_filename("dir-with-files");
     let file1 = format!("{}/file1.txt", dirname);
     let file2 = format!("{}/file2.txt", dirname);
     let subdir = format!("{}/subdir", dirname);
     let file3 = format!("{}/file3.txt", subdir);
 
-    // Create the structure outside the sandbox first
+    // Create the structure outside the layer first
     std::fs::create_dir(&dirname)?;
     std::fs::write(&file1, "content1")?;
     std::fs::write(&file2, "content2")?;
     std::fs::create_dir(&subdir)?;
     std::fs::write(&file3, "content3")?;
 
-    // Now remove the entire directory inside the sandbox
-    sandbox.run(&["rm", "-rf", &dirname])?;
+    // Now remove the entire directory inside the layer
+    layer.run(&["rm", "-rf", &dirname])?;
 
     // First check the status to see what changes are detected
-    sandbox.run(&["status"])?;
-    let status_output = sandbox.last_stdout.clone();
+    layer.run(&["status", "."])?;
+    let status_output = layer.last_stdout.clone();
     println!("Full status output:\n{}", status_output);
 
     // Count only the removals in our test directory from the status output
@@ -39,15 +39,15 @@ fn test_accept_directory_removal_counting(
     let removal_count = status_lines.len();
 
     // Accept all changes - we'll filter by the dirname in our counting
-    sandbox.run(&["accept"])?;
+    layer.run(&["accept", "."])?;
 
     // The output should show the actual count of changes
     // This will help us verify if there's double counting
-    println!("Accept output: {}", sandbox.last_stdout);
+    println!("Accept output: {}", layer.last_stdout);
 
     // With the fix, we now count only the parent directories and avoid counting
     // files that are removed as part of their parent directory removal
-    let output = &sandbox.last_stdout;
+    let output = &layer.last_stdout;
     println!("Number of removals in test directory: {}", removal_count);
 
     // Check for the "external or non-matching" message
@@ -103,34 +103,34 @@ fn test_accept_directory_removal_counting(
 
 #[rstest]
 fn test_accept_pretend_count_mixed_operations(
-    mut sandbox: SandboxManager,
+    mut layer: LayerManager,
 ) -> Result<()> {
     // Test that pretend count matches actual count for various operations
 
     // Create files to modify
-    let file1 = sandbox.test_filename("modify-file.txt");
-    let file2 = sandbox.test_filename("delete-file.txt");
-    let file3 = sandbox.test_filename("rename-source.txt");
-    let file4 = sandbox.test_filename("rename-dest.txt");
+    let file1 = layer.test_filename("modify-file.txt");
+    let file2 = layer.test_filename("delete-file.txt");
+    let file3 = layer.test_filename("rename-source.txt");
+    let file4 = layer.test_filename("rename-dest.txt");
 
-    // Create initial files outside sandbox
+    // Create initial files outside layer
     std::fs::write(&file1, "original")?;
     std::fs::write(&file2, "to delete")?;
     std::fs::write(&file3, "to rename")?;
 
-    // Perform operations inside sandbox
-    sandbox.run(&["sh", "-c", &format!("echo modified > {}", file1)])?; // Modify
-    sandbox.run(&["rm", &file2])?; // Remove
-    sandbox.run(&["mv", &file3, &file4])?; // Rename
-    sandbox.run(&["touch", sandbox.test_filename("new-file.txt").as_str()])?; // Create
+    // Perform operations inside layer
+    layer.run(&["sh", "-c", &format!("echo modified > {}", file1)])?; // Modify
+    layer.run(&["rm", &file2])?; // Remove
+    layer.run(&["mv", &file3, &file4])?; // Rename
+    layer.run(&["touch", layer.test_filename("new-file.txt").as_str()])?; // Create
 
     // Check status first to see what changes exist
-    sandbox.run(&["status"])?;
-    println!("Status output:\n{}", sandbox.last_stdout);
+    layer.run(&["status", "."])?;
+    println!("Status output:\n{}", layer.last_stdout);
 
     // Accept changes and verify counts
-    sandbox.run(&["accept"])?;
-    let output = sandbox.last_stdout.clone();
+    layer.run(&["accept", "."])?;
+    let output = layer.last_stdout.clone();
     println!("Accept output:\n{}", output);
 
     // Extract counts
@@ -167,19 +167,19 @@ fn test_accept_pretend_count_mixed_operations(
 
 #[rstest]
 fn test_accept_file_in_new_directory_counts_once(
-    mut sandbox: SandboxManager,
+    mut layer: LayerManager,
 ) -> Result<()> {
     // Test that creating a file in a new directory only counts as 1 change
-    let dirname = sandbox.test_filename("new-dir");
+    let dirname = layer.test_filename("new-dir");
     let filename = format!("{}/new-file.txt", dirname);
 
-    // Create file in new directory inside sandbox (this will create the directory too)
-    sandbox.run(&["mkdir", "-p", &dirname])?;
-    sandbox.run(&["sh", "-c", &format!("echo content > {}", filename)])?;
+    // Create file in new directory inside layer (this will create the directory too)
+    layer.run(&["mkdir", "-p", &dirname])?;
+    layer.run(&["sh", "-c", &format!("echo content > {}", filename)])?;
 
     // Check status to see what changes are detected
-    sandbox.run(&["status"])?;
-    let status_output = sandbox.last_stdout.clone();
+    layer.run(&["status", "."])?;
+    let status_output = layer.last_stdout.clone();
     println!("Status output:\n{}", status_output);
 
     // Count our specific changes from status
@@ -194,8 +194,8 @@ fn test_accept_file_in_new_directory_counts_once(
     }
 
     // Accept changes
-    sandbox.run(&["accept"])?;
-    let output = sandbox.last_stdout.clone();
+    layer.run(&["accept", "."])?;
+    let output = layer.last_stdout.clone();
     println!("Accept output:\n{}", output);
 
     // Extract count
@@ -227,20 +227,20 @@ fn test_accept_file_in_new_directory_counts_once(
 
 #[rstest]
 fn test_accept_file_in_depth_2_directory(
-    mut sandbox: SandboxManager,
+    mut layer: LayerManager,
 ) -> Result<()> {
     // Test that creating a file in depth 2 directory only counts as 1 change
-    let dir1 = sandbox.test_filename("dir1");
+    let dir1 = layer.test_filename("dir1");
     let dir2 = format!("{}/dir2", dir1);
     let filename = format!("{}/file.txt", dir2);
 
-    // Create file in depth 2 directory inside sandbox
-    sandbox.run(&["mkdir", "-p", &dir2])?;
-    sandbox.run(&["touch", &filename])?;
+    // Create file in depth 2 directory inside layer
+    layer.run(&["mkdir", "-p", &dir2])?;
+    layer.run(&["touch", &filename])?;
 
     // Check status to see what changes are detected
-    sandbox.run(&["status"])?;
-    let status_output = sandbox.last_stdout.clone();
+    layer.run(&["status", "."])?;
+    let status_output = layer.last_stdout.clone();
     println!("Status output:\n{}", status_output);
 
     // Count our specific changes from status
@@ -255,8 +255,8 @@ fn test_accept_file_in_depth_2_directory(
     }
 
     // Accept all changes (not just our directory)
-    sandbox.run(&["accept"])?;
-    let output = sandbox.last_stdout.clone();
+    layer.run(&["accept", "."])?;
+    let output = layer.last_stdout.clone();
     println!("Accept output:\n{}", output);
 
     // Extract count
@@ -300,25 +300,25 @@ fn test_accept_file_in_depth_2_directory(
 
 #[rstest]
 fn test_accept_directory_removal_counts_all_components(
-    mut sandbox: SandboxManager,
+    mut layer: LayerManager,
 ) -> Result<()> {
     // Test that removing a directory structure counts each component
     // Create a/b/c structure
-    let dir_a = sandbox.test_filename("a");
+    let dir_a = layer.test_filename("a");
     let dir_b = format!("{}/b", dir_a);
     let dir_c = format!("{}/c", dir_b);
 
-    // Create the structure outside sandbox
+    // Create the structure outside layer
     std::fs::create_dir(&dir_a)?;
     std::fs::create_dir(&dir_b)?;
     std::fs::create_dir(&dir_c)?;
 
-    // Remove the entire structure inside sandbox
-    sandbox.run(&["rm", "-rf", &dir_a])?;
+    // Remove the entire structure inside layer
+    layer.run(&["rm", "-rf", &dir_a])?;
 
     // Check status
-    sandbox.run(&["status"])?;
-    let status_output = sandbox.last_stdout.clone();
+    layer.run(&["status", "."])?;
+    let status_output = layer.last_stdout.clone();
     println!("Status output:\n{}", status_output);
 
     // Count removals
@@ -329,8 +329,8 @@ fn test_accept_directory_removal_counts_all_components(
     println!("Removal count: {}", removal_count);
 
     // Accept all changes (not filtered by pattern to avoid issues)
-    sandbox.run(&["accept"])?;
-    let output = sandbox.last_stdout.clone();
+    layer.run(&["accept", "."])?;
+    let output = layer.last_stdout.clone();
     println!("Accept output:\n{}", output);
 
     // Extract count
@@ -366,12 +366,12 @@ fn test_accept_directory_removal_counts_all_components(
 
 #[rstest]
 fn test_accept_non_matching_count_message(
-    mut sandbox: SandboxManager,
+    mut layer: LayerManager,
 ) -> Result<()> {
     // Test that the non-matching count message appears correctly
 
     // Create files in different directories
-    let file_in_test_dir = sandbox.test_filename("test-file.txt");
+    let file_in_test_dir = layer.test_filename("test-file.txt");
     let other_dir = "some-other-dir";
     let file_in_other_dir = format!("{}/other-file.txt", other_dir);
 
@@ -379,22 +379,22 @@ fn test_accept_non_matching_count_message(
     std::fs::create_dir_all(other_dir)?;
     std::fs::write(&file_in_other_dir, "other content")?;
 
-    // Inside sandbox: modify both files
-    sandbox.run(&["sh", "-c", &format!("echo test > {}", file_in_test_dir)])?;
-    sandbox.run(&[
+    // Inside layer: modify both files
+    layer.run(&["sh", "-c", &format!("echo test > {}", file_in_test_dir)])?;
+    layer.run(&[
         "sh",
         "-c",
         &format!("echo modified > {}", file_in_other_dir),
     ])?;
 
     // Check status to see all changes
-    sandbox.run(&["status"])?;
-    let status_output = sandbox.last_stdout.clone();
+    layer.run(&["status", "."])?;
+    let status_output = layer.last_stdout.clone();
     println!("Status output:\n{}", status_output);
 
     // Accept only changes in our test directory (using pattern)
-    sandbox.run(&["accept", &format!("{}*", sandbox.test_filename(""))])?;
-    let output = sandbox.last_stdout.clone();
+    layer.run(&["accept", &format!("{}*", layer.test_filename(""))])?;
+    let output = layer.last_stdout.clone();
     println!("Accept output:\n{}", output);
 
     // Check for the non-matching message

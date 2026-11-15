@@ -54,7 +54,7 @@ impl FileDetails {
     }
 
     /* An opaque directory means that we have created the directory
-     * within the sandbox, possibly removing a previous directory by
+     * within the layer, possibly removing a previous directory by
      * the same name along with all its contents. */
     pub fn is_opaque(&self) -> bool {
         let mut buffer = vec![0; 1];

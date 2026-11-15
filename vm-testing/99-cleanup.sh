@@ -22,4 +22,4 @@ sudo virsh undefine ubuntu-package-test || true
 
 rm -rf images/*-test.qcow2
 rm -f vendor.tar.gz
-rm -f sandbox-*.crate
+rm -f devlayer-*.crate

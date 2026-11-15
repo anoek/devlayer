@@ -40,9 +40,9 @@ fi
 mkdir -p generated
 
 # Ensure we have a ssh key
-if [ ! -f "generated/id_sandbox_test_vm_key" ]; then
+if [ ! -f "generated/id_devlayer_test_vm_key" ]; then
     echo "Generating ssh key"
-    ssh-keygen -t ed25519 -C "SSH key copied into the virtual machines to test the sandbox binary" -f "generated/id_sandbox_test_vm_key" -N ""
+    ssh-keygen -t ed25519 -C "SSH key copied into the virtual machines to test the devlayer binary" -f "generated/id_devlayer_test_vm_key" -N ""
 fi
 
 echo "Generating 50-dhcp-coverage.yaml"
@@ -62,28 +62,28 @@ network:
 EOF
 
 cat <<EOF > generated/exports
-/home/sandbox/nfs_sandboxes *(rw,sync,no_subtree_check,no_root_squash)
-/home/sandbox/nfs_source *(rw,sync,no_subtree_check,no_root_squash)
+/home/devlayer/nfs_layers *(rw,sync,no_subtree_check,no_root_squash)
+/home/devlayer/nfs_source *(rw,sync,no_subtree_check,no_root_squash)
 EOF
 
 
-# Create sudoers file for sandbox user
-echo "sandbox ALL=(ALL) NOPASSWD:ALL" > generated/sandbox-sudoers
+# Create sudoers file for devlayer user
+echo "devlayer ALL=(ALL) NOPASSWD:ALL" > generated/devlayer-sudoers
 
 echo "Customizing coverage testing image"
 cp images/ubuntu24lts-base.img images/coverage-prepared.qcow2
 
 qemu-img resize images/coverage-prepared.qcow2 +10G
 
-# The sandbox user password is blank, the -e flag denotes that the password
+# The devlayer user password is blank, the -e flag denotes that the password
 # is already encrypted and U6aMy0wojraho is the empty string, so just hit
 # enter for the password to login if you need to drop into the virsh console
 sudo virt-customize -a images/coverage-prepared.qcow2 \
                  --network \
                  --hostname coverage-test \
-                 --run-command "adduser sandbox -q" \
-                 --run-command "adduser sandbox sudo" \
-                 --run-command "echo 'sandbox:U6aMy0wojraho' | chpasswd -e" \
+                 --run-command "adduser devlayer -q" \
+                 --run-command "adduser devlayer sudo" \
+                 --run-command "echo 'devlayer:U6aMy0wojraho' | chpasswd -e" \
                  --run-command "apt update" \
                  --run-command "apt -y install cloud-guest-utils" \
                  --run-command "growpart /dev/sda 1" \
@@ -92,18 +92,18 @@ sudo virt-customize -a images/coverage-prepared.qcow2 \
                  --run-command "systemctl enable nfs-kernel-server.service" \
                  --copy-in generated/exports:/etc \
                  --run-command "chmod 644 /etc/exports" \
-                 --run-command "chmod 755 /home/sandbox" \
-                 --run-command "mkdir -p /home/sandbox/nfs_sandboxes" \
-                 --run-command "mkdir -p /home/sandbox/nfs_source" \
-                 --run-command "chmod 755 /home/sandbox/nfs_sandboxes" \
-                 --run-command "chmod 755 /home/sandbox/nfs_source" \
-                 --run-command "echo 'tmpfs /home/sandbox/nfs_sandboxes tmpfs defaults,size=512M 0 0' >> /etc/fstab" \
-                 --run-command "echo 'tmpfs /home/sandbox/nfs_source tmpfs defaults,size=4G 0 0' >> /etc/fstab" \
+                 --run-command "chmod 755 /home/devlayer" \
+                 --run-command "mkdir -p /home/devlayer/nfs_layers" \
+                 --run-command "mkdir -p /home/devlayer/nfs_source" \
+                 --run-command "chmod 755 /home/devlayer/nfs_layers" \
+                 --run-command "chmod 755 /home/devlayer/nfs_source" \
+                 --run-command "echo 'tmpfs /home/devlayer/nfs_layers tmpfs defaults,size=512M 0 0' >> /etc/fstab" \
+                 --run-command "echo 'tmpfs /home/devlayer/nfs_source tmpfs defaults,size=4G 0 0' >> /etc/fstab" \
                  --copy-in generated/50-dhcp-coverage.yaml:/etc/netplan \
-                 --copy-in generated/sandbox-sudoers:/etc/sudoers.d/ \
-                 --run-command "chown 0:0 /etc/sudoers.d/sandbox-sudoers" \
-                 --run-command "chmod 440 /etc/sudoers.d/sandbox-sudoers" \
-                 --run-command "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sudo -u sandbox sh -s -- -y --default-toolchain stable --profile minimal" \
-                 --run-command "sudo -u sandbox bash -c 'source /home/sandbox/.cargo/env && rustup component add rustfmt clippy llvm-tools && cargo install grcov'" \
-                 --ssh-inject sandbox:file:generated/id_sandbox_test_vm_key.pub \
+                 --copy-in generated/devlayer-sudoers:/etc/sudoers.d/ \
+                 --run-command "chown 0:0 /etc/sudoers.d/devlayer-sudoers" \
+                 --run-command "chmod 440 /etc/sudoers.d/devlayer-sudoers" \
+                 --run-command "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sudo -u devlayer sh -s -- -y --default-toolchain stable --profile minimal" \
+                 --run-command "sudo -u devlayer bash -c 'source /home/devlayer/.cargo/env && rustup component add rustfmt clippy llvm-tools && cargo install grcov'" \
+                 --ssh-inject devlayer:file:generated/id_devlayer_test_vm_key.pub \
                  --firstboot-command 'ssh-keygen -A && systemctl restart sshd'

@@ -2,6 +2,8 @@ use anyhow::Result;
 use log::{error, warn};
 use rand::Rng;
 use rstest::*;
+use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::path::Path;
 use std::process::Child;
 use std::{path::PathBuf, process::Command};
@@ -17,7 +19,7 @@ pub fn rid() -> String {
     rid
 }
 
-pub fn get_sandbox_bin() -> String {
+pub fn get_devlayer_bin() -> String {
     // Get the original working directory when the tests start
     // This is needed because tests may change directories
     let cargo_manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
@@ -40,13 +42,13 @@ pub fn get_sandbox_bin() -> String {
 
     let bin = if let Ok(current_exe) = std::env::current_exe() {
         if current_exe.to_string_lossy().contains("/coverage/") {
-            "target/coverage/sandbox"
+            "target/coverage/devlayer"
         } else {
-            "target/debug/sandbox"
+            "target/debug/devlayer"
         }
     } else {
         // Fallback if we can't determine the path
-        "target/debug/sandbox"
+        "target/debug/devlayer"
     };
 
     let path = project_root.join(bin);
@@ -56,7 +58,51 @@ pub fn get_sandbox_bin() -> String {
     absolute_path.to_string_lossy().to_string()
 }
 
-pub struct SandboxManager {
+/// A command that runs `cmd` as root with sudo, with our environment and
+/// the variables set on `cmd`, as `sudo -E` would. sudo-rs, the default sudo
+/// on Ubuntu 26.04, ignores -E, so the variables are passed through `env`.
+pub fn as_root(cmd: &Command) -> Command {
+    let mut vars: BTreeMap<OsString, OsString> = std::env::vars_os().collect();
+    let mut sudo = Command::new("sudo");
+    sudo.arg("env");
+    for (key, value) in cmd.get_envs() {
+        match value {
+            Some(value) => {
+                vars.insert(key.to_os_string(), value.to_os_string());
+            }
+            None => {
+                vars.remove(key);
+                sudo.arg("-u").arg(key);
+            }
+        }
+    }
+    for (key, value) in vars {
+        let mut var = key;
+        var.push("=");
+        var.push(value);
+        sudo.arg(var);
+    }
+    sudo.arg(cmd.get_program()).args(cmd.get_args());
+    if let Some(dir) = cmd.get_current_dir() {
+        sudo.current_dir(dir);
+    }
+    sudo
+}
+
+/// The parent pid of `pid`
+#[allow(dead_code)]
+pub fn ppid_of(pid: i32) -> Result<i32> {
+    let status = std::fs::read_to_string(format!("/proc/{}/status", pid))?;
+    status
+        .lines()
+        .find_map(|line| line.strip_prefix("PPid:"))
+        .ok_or_else(|| anyhow::anyhow!("no PPid line for {}", pid))?
+        .trim()
+        .parse::<i32>()
+        .map_err(Into::into)
+}
+
+pub struct LayerManager {
     pub name: String,
     pub last_stdout: String,
     pub last_stderr: String,
@@ -64,15 +110,20 @@ pub struct SandboxManager {
     pub all_stderr: String,
     pub debug_mode: bool,
     pub no_sudo: bool,
-    /* we store the sandbox binary path so we can chdir as necessary */
-    pub sandbox_bin: String,
+    /* we store the layer binary path so we can chdir as necessary */
+    pub devlayer_bin: String,
     pub no_default_options: bool,
     pub ignored: bool, // Controls whether --ignored is automatically added
+    /// When false (the default), --no-bind-cwd is added so that tests run
+    /// from the repository root do not write straight to the checkout
+    pub bind_cwd: bool,
+    /// Directory to run commands from, defaults to the test process cwd
+    pub cwd: Option<PathBuf>,
 }
 
-impl SandboxManager {
+impl LayerManager {
     pub fn new() -> Self {
-        let name = format!("sandbox-coverage-test-{}", rid());
+        let name = format!("devlayer-coverage-test-{}", rid());
 
         #[allow(clippy::panic)]
         match std::fs::create_dir_all(
@@ -95,13 +146,43 @@ impl SandboxManager {
             all_stderr: String::new(),
             debug_mode: false,
             no_sudo: false,
-            sandbox_bin: get_sandbox_bin(),
+            devlayer_bin: get_devlayer_bin(),
             no_default_options: false,
             ignored: true, // Default to true to maintain existing behavior
+            bind_cwd: false,
+            cwd: None,
         }
     }
 
-    /* When debug mode is on, the sandbox will not be cleaned up when the fixture is dropped */
+    /// Runs commands from `dir` with the cwd bind on, as a user starting
+    /// devlayer in `dir` would
+    #[allow(dead_code)]
+    pub fn bind_cwd_in(&mut self, dir: &Path) {
+        self.bind_cwd = true;
+        self.cwd = Some(dir.to_path_buf());
+    }
+
+    /// Adds --no-bind-cwd unless the test opted in to the cwd bind or passes
+    /// the flag itself
+    fn add_no_bind_cwd(&self, cmd: &mut Command, args: &[&str]) {
+        if !self.bind_cwd && !args.contains(&"--no-bind-cwd") {
+            cmd.args(["--no-bind-cwd"]);
+        }
+    }
+
+    /// `cmd` run as root, unless no_sudo is set
+    fn privileged(&self, cmd: Command) -> Command {
+        if self.no_sudo { cmd } else { as_root(&cmd) }
+    }
+
+    /// Applies the configured working directory to a command
+    fn apply_cwd(&self, cmd: &mut Command) {
+        if let Some(cwd) = &self.cwd {
+            cmd.current_dir(cwd);
+        }
+    }
+
+    /* When debug mode is on, the layer will not be cleaned up when the fixture is dropped */
     #[allow(dead_code)]
     pub fn set_debug_mode(&mut self, debug_mode: bool) {
         self.debug_mode = debug_mode;
@@ -115,19 +196,34 @@ impl SandboxManager {
 
     #[allow(dead_code)]
     pub fn dir(&self) -> Result<PathBuf> {
-        let mut cmd = Command::new("sudo");
-        cmd.args(["-E", &self.sandbox_bin]);
+        let mut cmd = Command::new(&self.devlayer_bin);
 
-        if self.no_sudo {
-            cmd = Command::new(&self.sandbox_bin);
-        }
-
-        cmd.args([format!("--name={}", &self.name)]);
-        cmd.args(["config", "sandbox_dir"]);
+        cmd.args([format!("--join={}", &self.name)]);
+        self.add_no_bind_cwd(&mut cmd, &[]);
+        cmd.args(["config", "layer_dir"]);
+        self.apply_cwd(&mut cmd);
+        let mut cmd = self.privileged(cmd);
         let output = cmd.output()?;
         let base = String::from_utf8_lossy(&output.stdout).to_string();
         let base = base.trim();
         Ok(PathBuf::from(base))
+    }
+
+    /// The pid file naming the layer's PID 1, next to the layer's directory
+    #[allow(dead_code)]
+    pub fn pid_file(&self) -> Result<PathBuf> {
+        Ok(PathBuf::from(format!("{}.pid", self.dir()?.display())))
+    }
+
+    /// The layer's PID 1, as its pid file records it
+    #[allow(dead_code)]
+    pub fn pid1(&self) -> Result<i32> {
+        let contents = std::fs::read_to_string(self.pid_file()?)?;
+        Ok(contents
+            .split_whitespace()
+            .next()
+            .unwrap_or_default()
+            .parse()?)
     }
 
     #[allow(dead_code)]
@@ -159,12 +255,7 @@ impl SandboxManager {
         use std::io::Write;
         use std::process::Stdio;
 
-        let mut cmd = Command::new("sudo");
-        cmd.args(["-E", &self.sandbox_bin]);
-
-        if self.no_sudo {
-            cmd = Command::new(&self.sandbox_bin);
-        }
+        let mut cmd = Command::new(&self.devlayer_bin);
 
         if !self.no_default_options
             && !args.iter().any(|arg| {
@@ -181,16 +272,12 @@ impl SandboxManager {
         cmd.args(["--no-config"]);
 
         if !self.no_default_options
-            && !args.iter().any(|arg| arg.starts_with("--name"))
+            && !args.iter().any(|arg| arg.starts_with("--join"))
         {
-            cmd.args([format!("--name={}", &self.name)]);
+            cmd.args([format!("--join={}", &self.name)]);
         }
+        self.add_no_bind_cwd(&mut cmd, args);
         cmd.args(args);
-
-        // Set up stdin
-        cmd.stdin(Stdio::piped());
-        cmd.stdout(Stdio::piped());
-        cmd.stderr(Stdio::piped());
 
         println!(
             "Running command with stdin: {} {}",
@@ -201,6 +288,11 @@ impl SandboxManager {
                 .join(" ")
         );
 
+        self.apply_cwd(&mut cmd);
+        let mut cmd = self.privileged(cmd);
+        cmd.stdin(Stdio::piped());
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
         let mut child = cmd
             .spawn()
             .map_err(|e| anyhow::anyhow!("Failed to spawn command: {:?}", e))?;
@@ -248,15 +340,10 @@ impl SandboxManager {
         env_key: &str,
         env_value: &str,
     ) -> Result<std::process::Output> {
-        let mut cmd = Command::new("sudo");
+        let mut cmd = Command::new(&self.devlayer_bin);
         if !env_key.is_empty() {
             println!("Setting env var: {}={}", env_key, env_value);
             cmd.env(env_key, env_value);
-        }
-        cmd.args(["-E", &self.sandbox_bin]);
-
-        if self.no_sudo {
-            cmd = Command::new(&self.sandbox_bin);
         }
 
         if !self.no_default_options
@@ -272,10 +359,11 @@ impl SandboxManager {
         }
 
         if !self.no_default_options
-            && !args.iter().any(|arg| arg.starts_with("--name"))
+            && !args.iter().any(|arg| arg.starts_with("--join"))
         {
-            cmd.args([format!("--name={}", &self.name)]);
+            cmd.args([format!("--join={}", &self.name)]);
         }
+        self.add_no_bind_cwd(&mut cmd, args);
         cmd.args(args);
         println!(
             "Running command: {} {}",
@@ -285,6 +373,8 @@ impl SandboxManager {
                 .collect::<Vec<_>>()
                 .join(" ")
         );
+        self.apply_cwd(&mut cmd);
+        let mut cmd = self.privileged(cmd);
         match cmd.output() {
             Ok(output) => {
                 self.last_stdout =
@@ -317,18 +407,31 @@ impl SandboxManager {
         }
     }
 
+    /// Leaves a process running in the layer so it doesn't shut itself down
+    /// once a command finishes. The layer then stays up until it's stopped.
+    #[allow(dead_code)]
+    pub fn hold(&mut self) -> Result<()> {
+        self.hold_with(&[])
+    }
+
+    /// Like `hold`, passing these options to devlayer, e.g. the resource
+    /// limits a layer was started with, which joining it requires
+    #[allow(dead_code)]
+    pub fn hold_with(&mut self, options: &[&str]) -> Result<()> {
+        let mut args = options.to_vec();
+        args.extend(["sh", "-c", "sleep 3600 >/dev/null 2>&1 &"]);
+        self.run(&args)?;
+        Ok(())
+    }
+
     #[allow(dead_code)]
     pub fn run_in_background(&mut self, args: &[&str]) -> Result<Child> {
-        let mut cmd = Command::new("sudo");
-        cmd.args(["-E", &self.sandbox_bin]);
-
-        if self.no_sudo {
-            cmd = Command::new(&self.sandbox_bin);
-        }
+        let mut cmd = Command::new(&self.devlayer_bin);
 
         if !self.no_default_options {
-            cmd.args([format!("--name={}", &self.name)]);
+            cmd.args([format!("--join={}", &self.name)]);
         }
+        self.add_no_bind_cwd(&mut cmd, args);
         cmd.args(args);
 
         println!(
@@ -340,6 +443,8 @@ impl SandboxManager {
                 .join(" ")
         );
 
+        self.apply_cwd(&mut cmd);
+        let mut cmd = self.privileged(cmd);
         Ok(cmd.spawn()?)
     }
 
@@ -394,14 +499,15 @@ impl SandboxManager {
     }
 }
 
-impl Drop for SandboxManager {
+impl Drop for LayerManager {
     fn drop(&mut self) {
         // Reset flags to default state for cleanup commands
         self.no_default_options = false;
         self.ignored = true;
+        self.cwd = None;
 
         if let Err(e) = self.run(&["stop"]) {
-            error!("Failed to kill sandbox: {}", e);
+            error!("Failed to kill layer: {}", e);
             error!("last_stderr: {}", self.last_stderr);
             error!("last_stdout: {}", self.last_stdout);
             return;
@@ -421,11 +527,11 @@ impl Drop for SandboxManager {
                     warn!("Failed to remove {} dir: {}", dirname.display(), e);
                 }
             }
-            let sandbox_name = self.name.clone();
-            match self.run(&["delete", "-y", sandbox_name.as_str()]) {
+            let layer_name = self.name.clone();
+            match self.run(&["delete", "-y", layer_name.as_str()]) {
                 Ok(_) => (),
                 Err(e) => {
-                    warn!("Failed to delete sandbox: {}", e);
+                    warn!("Failed to delete layer: {}", e);
                     warn!("last_stderr: {}", self.last_stderr);
                     warn!("last_stdout: {}", self.last_stdout);
                 }
@@ -437,6 +543,6 @@ impl Drop for SandboxManager {
 }
 
 #[fixture]
-pub fn sandbox() -> SandboxManager {
-    SandboxManager::new()
+pub fn layer() -> LayerManager {
+    LayerManager::new()
 }

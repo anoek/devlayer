@@ -7,8 +7,9 @@
 /dist
 /build
 
-dev_sandbox.sh
+dev_devlayer.sh
 .aider*
 callgrind.out.*
 cachegrind.out.*
 perf.data*
+superpowers/

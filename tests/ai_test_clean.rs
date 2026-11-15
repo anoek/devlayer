@@ -7,26 +7,23 @@ use rstest::*;
 use std::path::PathBuf;
 
 /* These tests use a private storage directory so that `clean` never touches
- * real sandboxes, or test sandboxes belonging to other tests. Only stopped
- * sandboxes are used: faking a running one would mean pointing its pid file
+ * real layers, or test layers belonging to other tests. Only stopped
+ * layers are used: faking a running one would mean pointing its pid file
  * at a host process, and stopping it would kill everything in the host pid
  * namespace. */
 
 struct CleanEnv {
-    sandbox: SandboxManager,
+    layer: LayerManager,
     storage_dir: PathBuf,
 }
 
 impl CleanEnv {
     fn new() -> Result<Self> {
-        let sandbox = sandbox();
+        let layer = layer();
         let storage_dir = std::env::current_dir()?
-            .join(sandbox.test_filename_no_rid("storage"));
+            .join(layer.test_filename_no_rid("storage"));
         std::fs::create_dir_all(&storage_dir)?;
-        Ok(Self {
-            sandbox,
-            storage_dir,
-        })
+        Ok(Self { layer, storage_dir })
     }
 
     fn storage_arg(&self) -> String {
@@ -37,12 +34,12 @@ impl CleanEnv {
         let storage_arg = self.storage_arg();
         let mut full_args = vec![storage_arg.as_str()];
         full_args.extend_from_slice(args);
-        self.sandbox.run(&full_args)?;
+        self.layer.run(&full_args)?;
         Ok(())
     }
 
-    /// Lays out the on-disk structure of a stopped sandbox. Real sandboxes
-    /// can't be created in a non-default storage dir from within a sandbox
+    /// Lays out the on-disk structure of a stopped layer. Real layers
+    /// can't be created in a non-default storage dir from within a layer
     /// (overlayfs stacking limits), and `clean` only needs the layout.
     fn create_stopped(&self, name: &str) -> Result<()> {
         for sub in ["upper", "work", "overlay"] {
@@ -60,7 +57,7 @@ impl CleanEnv {
 impl Drop for CleanEnv {
     fn drop(&mut self) {
         let storage_arg = self.storage_arg();
-        let _ = self.sandbox.run(&[&storage_arg, "delete", "-y", "*"]);
+        let _ = self.layer.run(&[&storage_arg, "delete", "-y", "*"]);
         let _ = std::fs::remove_dir_all(&self.storage_dir);
     }
 }
@@ -75,17 +72,17 @@ fn ephemeral_name(age: TimeDelta) -> String {
 }
 
 #[rstest]
-fn test_clean_removes_old_ephemeral_and_test_sandboxes() -> Result<()> {
+fn test_clean_removes_old_ephemeral_and_test_layers() -> Result<()> {
     let mut env = CleanEnv::new()?;
     let id = rid();
 
     let old = ephemeral_name(TimeDelta::days(8));
     let recent = ephemeral_name(TimeDelta::days(6));
     let bad_date = format!("ephemeral_not-a-date-{}", id);
-    let coverage = format!("sandbox-coverage-test-clean-{}", id);
-    let bind_empty = format!("sandbox-bind-empty-sudo-{}", id);
+    let coverage = format!("devlayer-coverage-test-clean-{}", id);
+    let bind_empty = format!("devlayer-bind-empty-sudo-{}", id);
     let bind_empty_dest =
-        format!("sandbox-bind-empty-dest-sandbox-coverage-test-{}", id);
+        format!("devlayer-bind-empty-dest-devlayer-coverage-test-{}", id);
     let regular = format!("clean-keep-{}", id);
 
     for name in [
@@ -101,7 +98,7 @@ fn test_clean_removes_old_ephemeral_and_test_sandboxes() -> Result<()> {
     }
 
     env.run(&["clean", "-y"])?;
-    assert!(env.sandbox.last_stdout.contains("4 sandboxes deleted"));
+    assert!(env.layer.last_stdout.contains("4 layers deleted"));
 
     for name in [&old, &coverage, &bind_empty, &bind_empty_dest] {
         assert!(!env.exists(name), "{} should have been cleaned", name);
@@ -120,19 +117,14 @@ fn test_clean_prompts_for_confirmation() -> Result<()> {
     env.create_stopped(&old_stopped)?;
 
     let storage_arg = env.storage_arg();
-    env.sandbox
-        .run_with_stdin(&[&storage_arg, "clean"], "n\n")?;
+    env.layer.run_with_stdin(&[&storage_arg, "clean"], "n\n")?;
     assert!(
-        env.sandbox
+        env.layer
             .last_stdout
-            .contains("The following sandboxes will be deleted")
+            .contains("The following layers will be deleted")
     );
-    assert!(env.sandbox.last_stdout.contains(&old_stopped));
-    assert!(
-        env.sandbox
-            .last_stdout
-            .contains("Delete operation cancelled")
-    );
+    assert!(env.layer.last_stdout.contains(&old_stopped));
+    assert!(env.layer.last_stdout.contains("Delete operation cancelled"));
     assert!(env.exists(&old_stopped));
 
     Ok(())
@@ -144,7 +136,7 @@ fn test_clean_nothing_to_clean() -> Result<()> {
     env.create_stopped(&ephemeral_name(TimeDelta::zero()))?;
 
     env.run(&["clean", "-y"])?;
-    assert!(env.sandbox.last_stdout.contains("No sandboxes to clean."));
+    assert!(env.layer.last_stdout.contains("No layers to clean."));
 
     Ok(())
 }

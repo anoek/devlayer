@@ -4,49 +4,42 @@ use fast_glob::glob_match;
 use log::{trace, warn};
 use nix::unistd::{Gid, Uid};
 
-use crate::sandbox::Sandbox;
+use crate::layer::Layer;
+use crate::util::{get_layer_lock_path, get_layer_pid_path};
 use anyhow::Result;
 
 pub fn stop(
-    sandboxes_storage_dir: &Path,
-    sandbox_name: &str,
+    layers_storage_dir: &Path,
+    layer_name: &str,
     uid: Uid,
     gid: Gid,
 ) -> Result<()> {
-    trace!("Stopping sandbox {}", sandbox_name);
-    let (sandbox, _lock) =
-        Sandbox::get(sandboxes_storage_dir, sandbox_name, uid, gid, None)?;
+    trace!("Stopping layer {}", layer_name);
+    let (layer, _lock) =
+        Layer::get(layers_storage_dir, layer_name, uid, gid, None)?;
 
-    let sandbox = match sandbox {
-        Some(sandbox) => sandbox,
-        None => Sandbox::from_location(
-            sandboxes_storage_dir,
-            sandbox_name,
-            uid,
-            gid,
-        ),
+    let layer = match layer {
+        Some(layer) => layer,
+        None => Layer::from_location(layers_storage_dir, layer_name, uid, gid),
     };
 
-    sandbox.stop()?;
-    sandbox.unmount()?;
+    layer.stop()?;
+    layer.unmount()?;
 
     Ok(())
 }
 
 pub fn stop_all(
-    sandboxes_storage_dir: &Path,
+    layers_storage_dir: &Path,
     uid: Uid,
     gid: Gid,
     patterns: &[String],
 ) -> Result<()> {
-    trace!(
-        "Stopping all sandboxes in {}",
-        sandboxes_storage_dir.display()
-    );
+    trace!("Stopping all layers in {}", layers_storage_dir.display());
 
-    let sandboxes = sandboxes_storage_dir.read_dir()?;
-    for sandbox in sandboxes {
-        let entry = sandbox?;
+    let layers = layers_storage_dir.read_dir()?;
+    for layer in layers {
+        let entry = layer?;
         let path = entry.path();
         let filename = path
             .components()
@@ -54,25 +47,12 @@ pub fn stop_all(
             .expect("Failed to get filename")
             .as_os_str();
         if filename.to_string_lossy().ends_with(".lock") {
-            let sandbox_name =
+            let layer_name =
                 filename.to_string_lossy()[..filename.len() - 5].to_string();
 
-            let lock_file = format!(
-                "{}/{}.lock",
-                sandboxes_storage_dir.display(),
-                sandbox_name
-            );
-            let pid_file = format!(
-                "{}/{}.pid",
-                sandboxes_storage_dir.display(),
-                sandbox_name
-            );
-            let storage_dir =
-                format!("{}/{}", sandboxes_storage_dir.display(), sandbox_name);
-
-            if !Path::new(&lock_file).exists()
-                || !Path::new(&pid_file).exists()
-                || !Path::new(&storage_dir).exists()
+            if !get_layer_lock_path(layers_storage_dir, &layer_name).exists()
+                || !get_layer_pid_path(layers_storage_dir, &layer_name).exists()
+                || !layers_storage_dir.join(&layer_name).exists()
             {
                 continue;
             }
@@ -81,13 +61,13 @@ pub fn stop_all(
                 || patterns.iter().any(|pattern| {
                     let mut pattern = pattern.clone();
                     pattern = format!("*{pattern}*");
-                    glob_match(&pattern, &sandbox_name)
+                    glob_match(&pattern, &layer_name)
                 })
             {
-                match stop(sandboxes_storage_dir, &sandbox_name, uid, gid) {
+                match stop(layers_storage_dir, &layer_name, uid, gid) {
                     Ok(_) => {}
                     Err(e) => {
-                        warn!("Failed to kill sandbox {}: {}", sandbox_name, e);
+                        warn!("Failed to kill layer {}: {}", layer_name, e);
                     }
                 }
             }

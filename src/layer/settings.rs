@@ -1,23 +1,57 @@
 use crate::config::{BindMount, Config};
-use crate::sandbox::mount_overlays::MountHash;
+use crate::layer::mount_overlays::MountHash;
+use crate::util::write_no_follow;
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SandboxSettings {
+pub struct LayerSettings {
     pub version: String,
     pub mounts: Vec<MountHash>,
     pub network: crate::config::Network,
     pub bind_mounts: Vec<BindMount>,
-    // Defaulted so settings from sandboxes started by older versions load
+    // Defaulted so settings from layers started by older versions load
     #[serde(default)]
     pub cpus: Option<f64>,
     #[serde(default)]
     pub memory: Option<u64>,
 }
 
-impl SandboxSettings {
+/// Where a layer was created and whether that directory is bound into it.
+/// This lives in the layer's base directory rather than in data/settings.json
+/// because the data directory is bound read-write into the layer, so programs
+/// in the layer could otherwise change which host directory is bound live.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LayerOrigin {
+    pub created_in: PathBuf,
+    pub bind_cwd: bool,
+}
+
+impl LayerOrigin {
+    pub fn path(layer_dir: &Path) -> PathBuf {
+        layer_dir.join("origin.json")
+    }
+
+    /// Loads the origin recorded for the layer in `layer_dir`, if there is a
+    /// valid one
+    pub fn load(layer_dir: &Path) -> Option<Self> {
+        let json = std::fs::read_to_string(Self::path(layer_dir)).ok()?;
+        let origin: Self = serde_json::from_str(&json).ok()?;
+        origin.created_in.is_absolute().then_some(origin)
+    }
+
+    pub fn save(&self, layer_dir: &Path) -> Result<()> {
+        let json = serde_json::to_string_pretty(self)
+            .context("Failed to serialize layer origin to JSON")?;
+        write_no_follow(&Self::path(layer_dir), json).context(format!(
+            "Failed to write {}",
+            Self::path(layer_dir).display()
+        ))
+    }
+}
+
+impl LayerSettings {
     pub fn from_config(config: &Config, mounts: &[MountHash]) -> Self {
         Self {
             version: env!("CARGO_PKG_VERSION").to_string(),
@@ -44,8 +78,8 @@ impl SandboxSettings {
 
     pub fn save_to_file(&self, path: &Path) -> Result<()> {
         let settings_json = serde_json::to_string_pretty(self)
-            .context("Failed to serialize sandbox settings to JSON")?;
-        std::fs::write(path, settings_json).context(format!(
+            .context("Failed to serialize layer settings to JSON")?;
+        write_no_follow(path, settings_json).context(format!(
             "Failed to write settings.json to {}",
             path.display()
         ))?;
@@ -63,7 +97,7 @@ impl SandboxSettings {
             "Failed to read settings.json from {}",
             path.display()
         ))?;
-        let settings: SandboxSettings = serde_json::from_str(&settings_json)
+        let settings: LayerSettings = serde_json::from_str(&settings_json)
             .context("Failed to parse settings.json")?;
         Ok(settings)
     }
@@ -77,7 +111,7 @@ impl SandboxSettings {
 
         if self.network != current_settings.network {
             return Err(anyhow!(
-                "Network configuration has changed. Existing: {:?}, Current: {:?}. Please stop existing sandbox to change network settings.",
+                "Network configuration has changed. Existing: {:?}, Current: {:?}. Please stop existing layer to change network settings.",
                 self.network,
                 current_settings.network
             ));
@@ -87,7 +121,7 @@ impl SandboxSettings {
             || self.memory != current_settings.memory
         {
             return Err(anyhow!(
-                "Resource limits have changed. Existing: {}, Current: {}. Please stop the existing sandbox to change resource limits.",
+                "Resource limits have changed. Existing: {}, Current: {}. Please stop the existing layer to change resource limits.",
                 describe_limits(self.cpus, self.memory),
                 describe_limits(current_settings.cpus, current_settings.memory),
             ));
@@ -124,7 +158,7 @@ impl SandboxSettings {
             }
 
             error_msg.push_str(
-                "Please stop the existing sandbox to change mount settings.",
+                "Please stop the existing layer to change mount settings.",
             );
             return Err(anyhow!(error_msg));
         }
@@ -161,7 +195,9 @@ impl SandboxSettings {
                 }
             }
 
-            error_msg.push_str("Please stop the existing sandbox to change bind mount settings.");
+            error_msg.push_str(
+                "Please stop the existing layer to change bind mount settings.",
+            );
             return Err(anyhow!(error_msg));
         }
 

@@ -1,5 +1,5 @@
-use crate::actions::delete::delete_sandboxes;
-use crate::actions::list::get_sandboxes;
+use crate::actions::delete::delete_layers;
+use crate::actions::list::get_layers;
 use crate::config::Config;
 use crate::outln;
 use anyhow::Result;
@@ -8,32 +8,29 @@ use fast_glob::glob_match;
 use log::trace;
 use std::path::Path;
 
-/// Sandboxes created by the test suite. These are always cleaned up,
+/// Layers created by the test suite. These are always cleaned up,
 /// running or not.
-const TEST_SANDBOX_PATTERNS: &[&str] =
-    &["sandbox-coverage-*", "sandbox-bind-empty-*"];
+const TEST_LAYER_PATTERNS: &[&str] =
+    &["devlayer-coverage-*", "devlayer-bind-empty-*"];
 
-/// Stopped ephemeral sandboxes older than this are cleaned up.
+/// Stopped ephemeral layers older than this are cleaned up.
 const EPHEMERAL_MAX_AGE_DAYS: i64 = 7;
 
 pub fn clean(
     config: &Config,
-    sandboxes_storage_dir: &Path,
+    layers_storage_dir: &Path,
     force: bool,
 ) -> Result<()> {
-    trace!("Finding sandboxes to clean");
+    trace!("Finding layers to clean");
 
-    let [running_sandboxes, stopped_sandboxes] =
-        get_sandboxes(sandboxes_storage_dir, &[])?;
+    let [running_layers, stopped_layers] = get_layers(layers_storage_dir, &[])?;
 
     let cutoff =
         Local::now().naive_local() - TimeDelta::days(EPHEMERAL_MAX_AGE_DAYS);
 
-    let running_to_delete: Vec<String> = running_sandboxes
-        .into_iter()
-        .filter(|n| is_test(n))
-        .collect();
-    let stopped_to_delete: Vec<String> = stopped_sandboxes
+    let running_to_delete: Vec<String> =
+        running_layers.into_iter().filter(|n| is_test(n)).collect();
+    let stopped_to_delete: Vec<String> = stopped_layers
         .into_iter()
         .filter(|n| {
             is_test(n) || ephemeral_created_at(n).is_some_and(|t| t < cutoff)
@@ -41,13 +38,13 @@ pub fn clean(
         .collect();
 
     if running_to_delete.is_empty() && stopped_to_delete.is_empty() {
-        outln!("No sandboxes to clean.");
+        outln!("No layers to clean.");
         return Ok(());
     }
 
-    delete_sandboxes(
+    delete_layers(
         config,
-        sandboxes_storage_dir,
+        layers_storage_dir,
         &running_to_delete,
         &stopped_to_delete,
         force,
@@ -55,7 +52,7 @@ pub fn clean(
 }
 
 fn is_test(name: &str) -> bool {
-    TEST_SANDBOX_PATTERNS
+    TEST_LAYER_PATTERNS
         .iter()
         .any(|pattern| glob_match(pattern, name))
 }

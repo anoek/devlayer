@@ -1,10 +1,11 @@
 use super::PartialConfig;
 use super::limits::{available_cpus, parse_cpus, parse_memory};
 use crate::config::{BindMount, BindMountOptions, Network};
+use crate::layer::LayerOrigin;
 use crate::util::{
     can_access, can_mkdir, expand_tilde_path, find_mount_point, mkdir,
 };
-use crate::{config::Config, types::UidGidHome, util::resolve_uid_gid_home};
+use crate::{config::Config, util::resolve_uid_gid_home};
 use anyhow::{Context, Result};
 use chrono::Local;
 use log::trace;
@@ -17,7 +18,26 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::cli::Args;
+use super::cli::{Action, Args};
+
+/// A read-write bind of `path` onto itself. Unlike parse_bind_mount, ':' in
+/// the path has no special meaning.
+fn path_bind_mount(path: &Path) -> Result<BindMount> {
+    let canonical = path.canonicalize().context(format!(
+        "Failed to canonicalize source path: {}",
+        path.display()
+    ))?;
+    Ok(BindMount {
+        source: canonical.clone(),
+        target: canonical,
+        options: BindMountOptions::ReadWrite,
+        argument: path.display().to_string(),
+    })
+}
+
+fn path_bind_mounts<P: AsRef<Path>>(paths: Vec<P>) -> Result<Vec<BindMount>> {
+    paths.iter().map(|p| path_bind_mount(p.as_ref())).collect()
+}
 
 /// Parses bind mount string and expands tildes
 /// Format: source[:target[:options]]
@@ -69,16 +89,16 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
 
     // Check for mutually exclusive name options
     if (cli.new || cli.last)
-        && (partial_config.name.is_some() || env::var("SANDBOX_NAME").is_ok())
+        && (partial_config.join.is_some() || env::var("DEVLAYER_JOIN").is_ok())
     {
-        // If --new or --last is specified, name must not be provided via env or config
+        // If --new or --last is specified, join must not be provided via env or config
         return Err(anyhow::anyhow!(
-            "Cannot use --new or --last when name is specified in config file or environment variable"
+            "Cannot use --new or --last when join is specified in config file or environment variable"
         ));
     }
 
     // Override with environment variables if set
-    if let Ok(log_level) = env::var("SANDBOX_LOG_LEVEL") {
+    if let Ok(log_level) = env::var("DEVLAYER_LOG_LEVEL") {
         if let Ok(log_level) = log::LevelFilter::from_str(&log_level) {
             partial_config.log_level = Some(log_level);
             sources.insert("log_level".into(), "environment".into());
@@ -87,21 +107,21 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         }
     }
     if !cli.new && !cli.last {
-        if let Ok(name) = env::var("SANDBOX_NAME") {
+        if let Ok(name) = env::var("DEVLAYER_JOIN") {
             if !name.is_empty() {
-                partial_config.name = Some(name);
+                partial_config.join = Some(name);
                 sources.insert("name".into(), "environment".into());
             }
         }
     }
-    if let Ok(storage_dir) = env::var("SANDBOX_STORAGE_DIR") {
+    if let Ok(storage_dir) = env::var("DEVLAYER_STORAGE_DIR") {
         if !storage_dir.is_empty() {
             partial_config.storage_dir = Some(storage_dir);
             sources.insert("storage_dir".into(), "environment".into());
         }
     }
 
-    if let Ok(net) = env::var("SANDBOX_NET") {
+    if let Ok(net) = env::var("DEVLAYER_NET") {
         if !net.is_empty() {
             if let Ok(net) = Network::from_str(&net) {
                 partial_config.net = Some(net);
@@ -112,21 +132,9 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         }
     }
 
-    if let Ok(ignored_env) = env::var("SANDBOX_IGNORED") {
-        if let Ok(ignored_val) = bool::from_str(&ignored_env) {
-            partial_config.ignored = Some(ignored_val);
-            sources.insert("ignored".into(), "environment".into());
-        } else {
-            return Err(anyhow::anyhow!(
-                "Invalid value for SANDBOX_IGNORED: {}",
-                ignored_env
-            ));
-        }
-    }
-
     // Bind mounts and masks from environment variables form a single layer
     let mut env_bind_layer = vec![];
-    if let Ok(bind_mounts_env) = env::var("SANDBOX_BIND") {
+    if let Ok(bind_mounts_env) = env::var("DEVLAYER_BIND") {
         let env_bind_mounts: Vec<String> = bind_mounts_env
             .split(',')
             .map(|s| s.trim().to_string())
@@ -139,7 +147,7 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         }
     }
 
-    if let Ok(mask_paths_env) = env::var("SANDBOX_MASK") {
+    if let Ok(mask_paths_env) = env::var("DEVLAYER_MASK") {
         let env_mask_paths: Vec<String> = mask_paths_env
             .split(',')
             .map(|s| s.trim())
@@ -154,28 +162,36 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     }
     bind_layers.push(env_bind_layer);
 
-    if let Ok(no_default_binds_env) = env::var("SANDBOX_NO_DEFAULT_BINDS") {
-        let no_default_binds_val = bool::from_str(&no_default_binds_env)
-            .expect("Invalid value for SANDBOX_NO_DEFAULT_BINDS");
-        partial_config.no_default_binds = Some(no_default_binds_val);
-        sources.insert("no_default_binds".into(), "environment".into());
-    }
-
-    if let Ok(audio_env) = env::var("SANDBOX_AUDIO") {
-        if let Ok(audio_val) = bool::from_str(&audio_env) {
-            partial_config.audio = Some(audio_val);
-            sources.insert("audio".into(), "environment".into());
-        } else {
-            return Err(anyhow::anyhow!(
-                "Invalid value for SANDBOX_AUDIO: {}",
-                audio_env
-            ));
+    for (var, key, field) in [
+        ("DEVLAYER_IGNORED", "ignored", &mut partial_config.ignored),
+        (
+            "DEVLAYER_NO_DEFAULT_BINDS",
+            "no_default_binds",
+            &mut partial_config.no_default_binds,
+        ),
+        (
+            "DEVLAYER_NO_DEFAULT_LLM_BINDS",
+            "no_default_llm_binds",
+            &mut partial_config.no_default_llm_binds,
+        ),
+        (
+            "DEVLAYER_NO_BIND_CWD",
+            "no_bind_cwd",
+            &mut partial_config.no_bind_cwd,
+        ),
+    ] {
+        if let Some(value) = env::var(var).ok().filter(|v| !v.is_empty()) {
+            let value = bool::from_str(&value).map_err(|_| {
+                anyhow::anyhow!("Invalid value for {}: {}", var, value)
+            })?;
+            *field = Some(value);
+            sources.insert(key.into(), "environment".into());
         }
     }
 
     for (var, key, field) in [
-        ("SANDBOX_CPUS", "cpus", &mut partial_config.cpus),
-        ("SANDBOX_MEMORY", "memory", &mut partial_config.memory),
+        ("DEVLAYER_CPUS", "cpus", &mut partial_config.cpus),
+        ("DEVLAYER_MEMORY", "memory", &mut partial_config.memory),
     ] {
         if let Some(value) = env::var(var).ok().filter(|v| !v.is_empty()) {
             *field = Some(value);
@@ -189,35 +205,45 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("log_level".into(), "cli".into());
     }
 
-    // Set storage_dir first if provided via CLI, as it's needed for --new and --last
+    // Resolve storage_dir first, as choosing the layer needs it
     if let Some(storage_dir) = cli.storage_dir {
         partial_config.storage_dir = Some(storage_dir);
         sources.insert("storage_dir".into(), "cli".into());
     }
-
-    // Handle name resolution based on CLI flags
-    if cli.new {
-        // Generate a new timestamp-based name
-        let name = generate_timestamp_name(
-            &partial_config.storage_dir,
-            uid_gid_home.uid,
-            uid_gid_home.gid,
-        )?;
-        partial_config.name = Some(name);
-        sources.insert("name".into(), "cli --new".into());
-    } else if cli.last {
-        // Find the most recently created sandbox
-        let name = find_last_sandbox(
-            &partial_config.storage_dir,
-            uid_gid_home.uid,
-            uid_gid_home.gid,
-        )?;
-        partial_config.name = Some(name);
-        sources.insert("name".into(), "cli --last".into());
-    } else if let Some(name) = cli.name {
-        partial_config.name = Some(name);
-        sources.insert("name".into(), "cli".into());
+    let storage_dir = resolve_storage_dir(
+        partial_config.storage_dir,
+        uid_gid_home.uid,
+        uid_gid_home.gid,
+    )?;
+    if !sources.contains_key("storage_dir") {
+        sources.insert("storage_dir".into(), "default".into());
     }
+
+    // Choose the layer. Explicit --new/--last/--join win, then a join from
+    // the environment or a config file, then the default for the action.
+    let cwd = std::env::current_dir()?;
+    let selection = if cli.new {
+        sources.insert("name".into(), "cli --new".into());
+        LayerSelection::New
+    } else if cli.last {
+        sources.insert("name".into(), "cli --last".into());
+        LayerSelection::Last
+    } else if let Some(name) = cli.join {
+        sources.insert("name".into(), "cli --join".into());
+        LayerSelection::Join(name)
+    } else if let Some(name) = partial_config.join {
+        LayerSelection::Join(name)
+    } else {
+        default_selection(cli.action.as_ref())
+    };
+    let new_layer = selection == LayerSelection::New;
+    let name = match selection {
+        LayerSelection::Join(name) => name,
+        LayerSelection::New => generate_timestamp_name(&storage_dir),
+        LayerSelection::Last => find_last_layer(&storage_dir, &cwd)?,
+        LayerSelection::LastOrNew => find_last_layer(&storage_dir, &cwd)
+            .unwrap_or_else(|_| generate_timestamp_name(&storage_dir)),
+    };
 
     if let Some(net) = cli.net {
         partial_config.net = Some(net);
@@ -234,9 +260,14 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("no_default_binds".into(), "cli".into());
     }
 
-    if cli.audio {
-        partial_config.audio = Some(true);
-        sources.insert("audio".into(), "cli".into());
+    if cli.no_default_llm_binds {
+        partial_config.no_default_llm_binds = Some(true);
+        sources.insert("no_default_llm_binds".into(), "cli".into());
+    }
+
+    if cli.no_bind_cwd {
+        partial_config.no_bind_cwd = Some(true);
+        sources.insert("no_bind_cwd".into(), "cli".into());
     }
 
     if let Some(cpus) = cli.cpus {
@@ -261,12 +292,11 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     bind_layers.push(cli_bind_layer);
 
     // If nothing else, fill in with some default values
-    let name = partial_config.name.unwrap_or("sandbox".to_string());
     if !sources.contains_key("name") {
         sources.insert("name".into(), "default".into());
     }
 
-    let net = partial_config.net.unwrap_or(Network::None);
+    let net = partial_config.net.unwrap_or(Network::Host);
     if !sources.contains_key("net") {
         sources.insert("net".into(), "default".into());
     }
@@ -281,9 +311,15 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("no_default_binds".into(), "default".into());
     }
 
-    let audio = partial_config.audio.unwrap_or(false);
-    if !sources.contains_key("audio") {
-        sources.insert("audio".into(), "default".into());
+    let no_default_llm_binds =
+        partial_config.no_default_llm_binds.unwrap_or(false);
+    if !sources.contains_key("no_default_llm_binds") {
+        sources.insert("no_default_llm_binds".into(), "default".into());
+    }
+
+    let no_bind_cwd = partial_config.no_bind_cwd.unwrap_or(false);
+    if !sources.contains_key("no_bind_cwd") {
+        sources.insert("no_bind_cwd".into(), "default".into());
     }
 
     let cpus = partial_config
@@ -304,21 +340,11 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources.insert("memory".into(), "default".into());
     }
 
-    let storage_dir = resolve_sandbox_storage_dir(
-        partial_config.storage_dir,
-        uid_gid_home.uid,
-        uid_gid_home.gid,
-    )?;
-    if !sources.contains_key("storage_dir") {
-        sources.insert("storage_dir".into(), "default".into());
+    let layer_dir = storage_dir.join(name.clone());
+    if !sources.contains_key("layer_dir") {
+        sources.insert("layer_dir".into(), "derived from storage_dir".into());
     }
 
-    let sandbox_dir = storage_dir.join(name.clone());
-    if !sources.contains_key("sandbox_dir") {
-        sources.insert("sandbox_dir".into(), "derived from storage_dir".into());
-    }
-
-    let cwd = std::env::current_dir()?;
     let mp = find_mount_point(cwd.clone())?;
     let hash =
         data_encoding::BASE32_NOPAD.encode(mp.to_string_lossy().as_bytes());
@@ -336,26 +362,78 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         .join(cwd.strip_prefix(&mp)?);
     sources.insert("overlay_cwd".into(), "derived from storage_dir".into());
 
-    // Audio bind mounts sit just above the default bind mounts. They are
-    // explicitly requested, so --no-default-binds does not disable them.
-    if audio {
-        bind_layers.insert(0, get_audio_bind_mounts());
-    }
+    // Where a layer was created and whether that directory is bound are
+    // recorded when it's created, so entering it from another directory, or
+    // without --no-bind-cwd, doesn't change its binds. A new layer's name was
+    // free when it was generated, so an origin recorded under it belongs to a
+    // concurrent launch that took the name first. Binding / is refused when a
+    // layer starts, not here, so actions that don't start one work from /.
+    let recorded = if new_layer {
+        None
+    } else {
+        LayerOrigin::load(&layer_dir)
+    };
+    let origin = match recorded {
+        Some(origin) => {
+            let path = LayerOrigin::path(&layer_dir).display().to_string();
+            sources.insert("created_in".into(), path.clone());
+            sources.insert("bind_cwd".into(), path);
+            origin
+        }
+        None => {
+            let no_bind_cwd_source =
+                sources.get("no_bind_cwd").cloned().unwrap_or_default();
+            sources.insert("created_in".into(), "cwd".into());
+            sources.insert("bind_cwd".into(), no_bind_cwd_source);
+            LayerOrigin {
+                created_in: cwd.canonicalize().context(format!(
+                    "Failed to canonicalize current directory {}",
+                    cwd.display()
+                ))?,
+                bind_cwd: !no_bind_cwd,
+            }
+        }
+    };
 
-    // Default bind mounts are the lowest precedence layer
+    // Below the config file, environment and CLI bind layers, from lowest to
+    // highest precedence: the default bind mounts including audio, the LLM
+    // tool binds, and the directory the layer was created in
+    let mut path_layers: Vec<Vec<BindMount>> = vec![];
     if !no_default_binds {
-        bind_layers.insert(0, get_default_bind_mounts(&net, &uid_gid_home));
+        let mut default_binds = get_default_bind_mounts(&net);
+        default_binds.extend(get_audio_bind_mounts());
+        path_layers.push(path_bind_mounts(default_binds)?);
+    }
+    if !no_default_llm_binds {
+        path_layers
+            .push(path_bind_mounts(get_llm_bind_mounts(&uid_gid_home.home))?);
+    }
+    if origin.bind_cwd {
+        path_layers.push(vec![path_bind_mount(&origin.created_in)?]);
     }
 
     // Resolve bind mounts layer by layer from lowest to highest precedence.
     // Conflicting mounts within a single layer are an error, while a mount in
     // a higher precedence layer overrides any mount with the same target in a
     // lower precedence layer.
+    let parsed_layers = bind_layers
+        .iter()
+        .map(|layer| layer.iter().map(|m| parse_bind_mount(m)).collect())
+        .collect::<Result<Vec<Vec<BindMount>>>>()?;
+
+    // Binding the home directory takes asking for it, e.g. with --bind=.
+    let cwd_bind_is_home = origin.bind_cwd
+        && uid_gid_home.home.canonicalize().ok().as_ref()
+            == Some(&origin.created_in)
+        && !parsed_layers.iter().flatten().any(|mount| {
+            mount.target == origin.created_in
+                && mount.options != BindMountOptions::Mask
+        });
+
     let mut target_map: HashMap<PathBuf, BindMount> = HashMap::new();
-    for layer in bind_layers {
+    for layer in path_layers.into_iter().chain(parsed_layers) {
         let mut layer_map: HashMap<PathBuf, BindMount> = HashMap::new();
         for mount in layer {
-            let mount = parse_bind_mount(&mount)?;
             if let Some(existing) = layer_map.get(&mount.target) {
                 if existing.source != mount.source
                     || existing.options != mount.options
@@ -385,9 +463,10 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
 
     let config = Config {
         name,
+        new_layer,
         net,
         storage_dir,
-        sandbox_dir,
+        layer_dir,
         upper_cwd,
         overlay_cwd,
         log_level: partial_config.log_level.unwrap_or(log::LevelFilter::Info),
@@ -395,7 +474,9 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
         sources,
         bind_mounts,
         no_default_binds,
-        audio,
+        no_default_llm_binds,
+        origin,
+        cwd_bind_is_home,
         cpus,
         memory,
         config_files,
@@ -404,15 +485,12 @@ pub fn resolve_config(cli: Args) -> Result<Config> {
     validate_config(&config)?;
 
     trace!("Storage dir: {:?}", config.storage_dir);
-    trace!("Sandbox: {:?}", config.name);
+    trace!("Layer: {:?}", config.name);
 
     Ok(config)
 }
 
-fn get_default_bind_mounts(
-    net: &Network,
-    uid_gid_home: &UidGidHome,
-) -> Vec<String> {
+fn get_default_bind_mounts(net: &Network) -> Vec<String> {
     let mut default_binds = Vec::new();
 
     // System binds
@@ -454,21 +532,38 @@ fn get_default_bind_mounts(
         }
     }
 
-    // User directories for AI coding assistants
-    let user_dirs = [
-        ".claude", // Claude artifacts and settings
-        ".aider",  // Aider chat history and settings
-        ".cursor", // Cursor settings
-    ];
-
-    for dir in &user_dirs {
-        let user_dir = uid_gid_home.home.join(dir);
-        if user_dir.exists() {
-            default_binds.push(format!("{}", user_dir.display()));
-        }
-    }
-
     default_binds
+}
+
+/// Well-known AI tool config and state paths, relative to the home directory,
+/// that are bound into layers by default unless --no-default-llm-binds is set
+const LLM_BIND_PATHS: &[&str] = &[
+    ".claude",
+    ".claude.json",
+    ".codex",
+    ".pi",
+    ".gemini",
+    ".qwen",
+    ".aider",
+    ".cursor",
+    ".config/opencode",
+    ".local/share/opencode",
+    ".config/goose",
+    ".continue",
+    ".codeium",
+    ".config/github-copilot",
+    ".factory",
+    ".config/crush",
+    ".local/share/crush",
+];
+
+/// Returns the LLM_BIND_PATHS that exist under `home`, as absolute paths
+fn get_llm_bind_mounts(home: &Path) -> Vec<PathBuf> {
+    LLM_BIND_PATHS
+        .iter()
+        .map(|path| home.join(path))
+        .filter(|path| path.exists())
+        .collect()
 }
 
 fn get_audio_bind_mounts() -> Vec<String> {
@@ -495,7 +590,7 @@ fn get_audio_bind_mounts() -> Vec<String> {
     audio_binds
 }
 
-pub fn resolve_sandbox_storage_dir(
+pub fn resolve_storage_dir(
     storage_dir: Option<String>,
     uid: Uid,
     gid: Gid,
@@ -518,8 +613,8 @@ pub fn resolve_sandbox_storage_dir(
         None => {
             let ugh = resolve_uid_gid_home()?;
             vec![
-                ugh.home.join(".sandboxes"),
-                PathBuf::from(format!("/tmp/sandboxes-{}", ugh.uid)),
+                ugh.home.join(".devlayer"),
+                PathBuf::from(format!("/tmp/devlayer-{}", ugh.uid)),
             ]
         }
     };
@@ -695,20 +790,20 @@ fn find_config_files() -> Result<Vec<PathBuf>> {
     // Any project specific files
     let mut current_dir = std::env::current_dir()?;
     loop {
-        paths_to_check.push(current_dir.join(".sandbox.conf"));
-        paths_to_check.push(current_dir.join(".sandbox.toml"));
+        paths_to_check.push(current_dir.join(".devlayer.conf"));
+        paths_to_check.push(current_dir.join(".devlayer.toml"));
         if current_dir == uid_gid_home.home || !current_dir.pop() {
             break;
         }
     }
 
-    // ~/.config/sandbox/config.toml
-    paths_to_check.push(uid_gid_home.home.join(".config/sandbox/config.conf"));
-    paths_to_check.push(uid_gid_home.home.join(".config/sandbox/config.toml"));
+    // ~/.config/devlayer/config.toml
+    paths_to_check.push(uid_gid_home.home.join(".config/devlayer/config.conf"));
+    paths_to_check.push(uid_gid_home.home.join(".config/devlayer/config.toml"));
 
-    // /etc/sandbox.conf
-    paths_to_check.push(PathBuf::from("/etc/sandbox.conf"));
-    paths_to_check.push(PathBuf::from("/etc/sandbox.toml"));
+    // /etc/devlayer.conf
+    paths_to_check.push(PathBuf::from("/etc/devlayer.conf"));
+    paths_to_check.push(PathBuf::from("/etc/devlayer.toml"));
 
     // Finally reverse them so we can process them in order nicely
     paths_to_check.reverse();
@@ -740,8 +835,8 @@ fn merge_configs(
         base.log_level = Some(log_level);
         sources.insert("log_level".into(), source.into());
     }
-    if let Some(name) = override_config.name {
-        base.name = Some(name);
+    if let Some(name) = override_config.join {
+        base.join = Some(name);
         sources.insert("name".into(), source.into());
     }
     if let Some(storage_dir) = override_config.storage_dir {
@@ -760,9 +855,13 @@ fn merge_configs(
         base.no_default_binds = Some(no_default_binds);
         sources.insert("no_default_binds".into(), source.into());
     }
-    if let Some(audio) = override_config.audio {
-        base.audio = Some(audio);
-        sources.insert("audio".into(), source.into());
+    if let Some(value) = override_config.no_default_llm_binds {
+        base.no_default_llm_binds = Some(value);
+        sources.insert("no_default_llm_binds".into(), source.into());
+    }
+    if let Some(value) = override_config.no_bind_cwd {
+        base.no_bind_cwd = Some(value);
+        sources.insert("no_bind_cwd".into(), source.into());
     }
     if let Some(cpus) = override_config.cpus {
         base.cpus = Some(cpus);
@@ -787,20 +886,15 @@ fn merge_configs(
 
 fn validate_config(config: &Config) -> Result<()> {
     if config.name.contains("/") {
-        return Err(anyhow::anyhow!("Invalid sandbox name: {}", config.name));
+        return Err(anyhow::anyhow!("Invalid layer name: {}", config.name));
     }
 
     Ok(())
 }
 
-fn generate_timestamp_name(
-    storage_dir: &Option<String>,
-    uid: Uid,
-    gid: Gid,
-) -> Result<String> {
-    let storage_dir =
-        resolve_sandbox_storage_dir(storage_dir.clone(), uid, gid)?;
-
+/// Generates an `ephemeral_*` name for a new layer that isn't taken yet.
+/// Generating it doesn't reserve it; `Layer::get_or_create` does that.
+pub(crate) fn generate_timestamp_name(storage_dir: &Path) -> String {
     #[cfg(feature = "coverage")]
     let mut iter = 0;
 
@@ -810,9 +904,9 @@ fn generate_timestamp_name(
             format!("ephemeral_{}", now.format("%Y-%m-%d_%H-%M-%S"));
 
         // Check if this name already exists
-        let sandbox_path = storage_dir.join(&base_name);
-        if !sandbox_path.exists() {
-            return Ok(base_name);
+        let layer_path = storage_dir.join(&base_name);
+        if !layer_path.exists() {
+            return base_name;
         }
 
         // If it exists, try with millisecond precision
@@ -827,9 +921,9 @@ fn generate_timestamp_name(
                 name_with_ms
             };
 
-        let sandbox_path_ms = storage_dir.join(&name_with_ms);
-        if !sandbox_path_ms.exists() {
-            return Ok(name_with_ms);
+        let layer_path_ms = storage_dir.join(&name_with_ms);
+        if !layer_path_ms.exists() {
+            return name_with_ms;
         }
 
         // If even that exists, sleep for a millisecond and try again
@@ -842,56 +936,111 @@ fn generate_timestamp_name(
     }
 }
 
-fn find_last_sandbox(
-    storage_dir: &Option<String>,
-    uid: Uid,
-    gid: Gid,
-) -> Result<String> {
-    let storage_dir =
-        resolve_sandbox_storage_dir(storage_dir.clone(), uid, gid)?;
+/// How the layer to use is chosen
+#[derive(Debug, Clone, PartialEq)]
+enum LayerSelection {
+    /// A new layer with a generated `ephemeral_*` name
+    New,
+    /// The newest layer created in the cwd, or else in its nearest ancestor
+    /// that has layers
+    Last,
+    /// Like `Last`, but falls back to a new name when no layer matches. Used
+    /// by `config` so it reports this directory's layer without failing.
+    LastOrNew,
+    /// The named layer, created if it does not exist
+    Join(String),
+}
 
-    let entries = std::fs::read_dir(&storage_dir).context(format!(
-        "Failed to read sandbox storage directory: {:?}",
-        storage_dir
+/// The layer selection used when no --new, --last or --join is given and no
+/// join is set in the environment or a config file
+fn default_selection(action: Option<&Action>) -> LayerSelection {
+    match action {
+        None => LayerSelection::New,
+        Some(
+            Action::Status { .. }
+            | Action::Diff { .. }
+            | Action::Accept { .. }
+            | Action::Reject { .. }
+            | Action::Stop {
+                all: false,
+                patterns: None,
+            },
+        ) => LayerSelection::Last,
+        Some(Action::Delete { patterns, .. })
+            if patterns.as_ref().is_none_or(|p| p.is_empty()) =>
+        {
+            LayerSelection::Last
+        }
+        Some(Action::Config { .. }) => LayerSelection::LastOrNew,
+        Some(_) => LayerSelection::New,
+    }
+}
+
+/// Fails if the action is accept or reject without a pattern. Checked before
+/// the layer is chosen, so the hint is given even where there's no layer.
+pub fn require_patterns(action: Option<&Action>) -> Result<()> {
+    let (name, patterns) = match action {
+        Some(Action::Accept { patterns }) => ("accept", patterns),
+        Some(Action::Reject { patterns }) => ("reject", patterns),
+        _ => return Ok(()),
+    };
+    if patterns.as_ref().is_none_or(|p| p.is_empty()) {
+        return Err(anyhow::anyhow!(
+            "{name} requires at least one pattern; use `devlayer {name} /` to {name} every change in the layer"
+        ));
+    }
+    Ok(())
+}
+
+/// Finds the newest layer created in `cwd`, or else in the nearest ancestor
+/// of `cwd` that has layers. Layers without a recorded creation directory are
+/// ignored.
+fn find_last_layer(storage_dir: &Path, cwd: &Path) -> Result<String> {
+    let cwd = cwd.canonicalize().context(format!(
+        "Failed to canonicalize current directory {}",
+        cwd.display()
     ))?;
 
-    let mut sandboxes: Vec<(String, SystemTime)> = Vec::new();
-
-    for entry in entries {
-        let entry = entry?;
-        let path = entry.path();
-
-        // Check if this is a valid sandbox directory
-        if path.is_dir()
-            && path.join("upper").is_dir()
-            && path.join("work").is_dir()
-            && path.join("overlay").is_dir()
-        {
-            let name = entry.file_name().to_string_lossy().to_string();
-            let metadata = entry.metadata()?;
-            let created = metadata
-                .created()
-                .or_else(|_| metadata.modified())
-                .context("Failed to get creation time for sandbox")?;
-            sandboxes.push((name, created));
-        }
-    }
+    let layers: Vec<(PathBuf, String, SystemTime)> =
+        std::fs::read_dir(storage_dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|entry| {
+                let path = entry.path();
+                let origin = LayerOrigin::load(&path)?;
+                let metadata = entry.metadata().ok()?;
+                let created =
+                    metadata.created().or_else(|_| metadata.modified()).ok()?;
+                Some((
+                    origin.created_in,
+                    entry.file_name().to_string_lossy().to_string(),
+                    created,
+                ))
+            })
+            .collect();
 
     #[cfg(feature = "coverage")]
-    let mut sandboxes = if std::env::var_os("TEST_LAST_IS_EMPTY").is_some() {
+    let layers = if std::env::var_os("TEST_LAST_IS_EMPTY").is_some() {
         vec![]
     } else {
-        sandboxes
+        layers
     };
 
-    if sandboxes.is_empty() {
-        return Err(anyhow::anyhow!("No sandboxes found"));
-    }
-
-    // Sort by creation time (newest first)
-    sandboxes.sort_by(|a, b| b.1.cmp(&a.1));
-
-    Ok(sandboxes[0].0.clone())
+    cwd.ancestors()
+        .find_map(|dir| {
+            layers
+                .iter()
+                .filter(|(created_in, _, _)| created_in == dir)
+                .max_by_key(|(_, _, created)| *created)
+                .map(|(_, name, _)| name.clone())
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "No devlayer found for {} or its parent directories; use --join <name> or `devlayer list`",
+                cwd.display()
+            )
+        })
 }
 
 #[cfg(test)]
@@ -906,16 +1055,110 @@ mod tests {
     static XDG_TEST_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
+    fn default_selection_by_action() {
+        use LayerSelection::*;
+        let none = || None;
+        let some = |p: &[&str]| Some(p.iter().map(|s| s.to_string()).collect());
+
+        assert_eq!(default_selection(None), New);
+        for action in [
+            Action::Status { patterns: none() },
+            Action::Diff { patterns: none() },
+            Action::Accept { patterns: none() },
+            Action::Reject { patterns: none() },
+            Action::Stop {
+                all: false,
+                patterns: none(),
+            },
+            Action::Delete {
+                yes: true,
+                patterns: none(),
+            },
+            Action::Delete {
+                yes: true,
+                patterns: some(&[]),
+            },
+        ] {
+            assert_eq!(default_selection(Some(&action)), Last, "{action:?}");
+        }
+        assert_eq!(
+            default_selection(Some(&Action::Config { keys: none() })),
+            LastOrNew
+        );
+        for action in [
+            Action::Stop {
+                all: true,
+                patterns: none(),
+            },
+            Action::Stop {
+                all: false,
+                patterns: some(&["x"]),
+            },
+            Action::Delete {
+                yes: true,
+                patterns: some(&["x"]),
+            },
+            Action::List { patterns: none() },
+            Action::Sync,
+            Action::Clean { yes: true },
+        ] {
+            assert_eq!(default_selection(Some(&action)), New, "{action:?}");
+        }
+    }
+
+    /// Creates an empty, unique fake home directory for LLM bind tests
+    fn fake_home(tag: &str) -> PathBuf {
+        let home = std::env::temp_dir().join(format!(
+            "devlayer-coverage-llm-home-{}-{}",
+            tag,
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&home);
+        std::fs::create_dir_all(&home).unwrap();
+        home
+    }
+
+    #[test]
+    fn path_bind_mount_keeps_colons() {
+        let home = fake_home("with:colon");
+        let mount = path_bind_mount(&home).unwrap();
+        assert_eq!(mount.source, home.canonicalize().unwrap());
+        assert_eq!(mount.target, mount.source);
+        assert_eq!(mount.options, BindMountOptions::ReadWrite);
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn llm_binds_skip_missing_paths() {
+        let home = fake_home("missing");
+        std::fs::create_dir_all(home.join(".codex")).unwrap();
+        std::fs::write(home.join(".claude.json"), "{}").unwrap();
+
+        assert_eq!(
+            get_llm_bind_mounts(&home),
+            vec![home.join(".claude.json"), home.join(".codex")]
+        );
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
+    fn llm_binds_all_present() {
+        let home = fake_home("all");
+        for path in LLM_BIND_PATHS {
+            std::fs::create_dir_all(home.join(path)).unwrap();
+        }
+
+        let binds = get_llm_bind_mounts(&home);
+        assert_eq!(binds.len(), 17);
+        let expected: Vec<PathBuf> =
+            LLM_BIND_PATHS.iter().map(|p| home.join(p)).collect();
+        assert_eq!(binds, expected);
+        std::fs::remove_dir_all(&home).unwrap();
+    }
+
+    #[test]
     fn ai_test_get_default_bind_mounts_xdg_runtime_dir() {
         let _guard = XDG_TEST_MUTEX.lock().unwrap();
-        use crate::types::UidGidHome;
-        use std::path::PathBuf;
-
-        let uid_gid_home = UidGidHome {
-            uid: Uid::from_raw(1000),
-            gid: Gid::from_raw(1000),
-            home: PathBuf::from("/home/test"),
-        };
 
         // Test 1: XDG_RUNTIME_DIR is set, but TEST_EMPTY_XDG_RUNTIME_DIR overrides it
         unsafe {
@@ -923,7 +1166,7 @@ mod tests {
             env::set_var("TEST_EMPTY_XDG_RUNTIME_DIR", "1");
         }
 
-        let binds = get_default_bind_mounts(&Network::Host, &uid_gid_home);
+        let binds = get_default_bind_mounts(&Network::Host);
         assert!(!binds.iter().any(|b| b.contains("/tmp/xdg/bus")));
 
         unsafe {
@@ -935,7 +1178,7 @@ mod tests {
             env::remove_var("XDG_RUNTIME_DIR");
         }
 
-        let binds = get_default_bind_mounts(&Network::Host, &uid_gid_home);
+        let binds = get_default_bind_mounts(&Network::Host);
         assert!(!binds.iter().any(|b| b.contains("/bus")));
 
         // Test 3: XDG_RUNTIME_DIR is set to a test path that doesn't exist
@@ -944,7 +1187,7 @@ mod tests {
         }
 
         // Since /tmp/test_xdg_runtime_dir/bus won't exist, it shouldn't be included
-        let binds = get_default_bind_mounts(&Network::Host, &uid_gid_home);
+        let binds = get_default_bind_mounts(&Network::Host);
         assert!(
             !binds
                 .iter()
@@ -952,16 +1195,17 @@ mod tests {
         );
 
         // Test 4: Test with Network::None (should not include any XDG bus)
-        let binds = get_default_bind_mounts(&Network::None, &uid_gid_home);
+        let binds = get_default_bind_mounts(&Network::None);
         assert!(!binds.iter().any(|b| b.contains("/bus")));
     }
 
     #[test]
     fn test_validate_config() {
         let mut config = Config {
-            name: "test-sandbox".to_string(),
+            name: "test-layer".to_string(),
+            new_layer: false,
             storage_dir: PathBuf::from("/tmp/test"),
-            sandbox_dir: PathBuf::from("/tmp/test"),
+            layer_dir: PathBuf::from("/tmp/test"),
             upper_cwd: PathBuf::from("/tmp/test"),
             overlay_cwd: PathBuf::from("/tmp/test"),
             net: Network::Host,
@@ -970,19 +1214,24 @@ mod tests {
             log_level: LevelFilter::Info,
             bind_mounts: vec![],
             no_default_binds: false,
-            audio: false,
+            no_default_llm_binds: false,
+            origin: LayerOrigin {
+                created_in: PathBuf::from("/tmp"),
+                bind_cwd: false,
+            },
+            cwd_bind_is_home: false,
             cpus: None,
             memory: None,
             config_files: vec![],
         };
         assert!(validate_config(&config).is_ok());
-        config.name = "../test-sandbox".to_string();
+        config.name = "../test-layer".to_string();
         assert!(validate_config(&config).is_err());
-        config.name = "test-sandbox/".to_string();
+        config.name = "test-layer/".to_string();
         assert!(validate_config(&config).is_err());
-        config.name = "test-sandbox\\".to_string();
+        config.name = "test-layer\\".to_string();
         assert!(validate_config(&config).is_ok());
-        config.name = "test-sandbox.".to_string();
+        config.name = "test-layer.".to_string();
         assert!(validate_config(&config).is_ok());
         config.name = ".test".to_string();
         assert!(validate_config(&config).is_ok());
@@ -1038,7 +1287,7 @@ mod tests {
 
         let override_config = PartialConfig {
             log_level: Some(LevelFilter::Debug),
-            name: Some("test-sandbox".to_string()),
+            join: Some("test-layer".to_string()),
             storage_dir: Some("/tmp/test".to_string()),
             net: Some(Network::Host),
             ignored: Some(true),
@@ -1048,7 +1297,8 @@ mod tests {
             ]),
             mask: Some(vec!["/tmp/test3".to_string()]),
             no_default_binds: Some(true),
-            audio: Some(true),
+            no_default_llm_binds: Some(true),
+            no_bind_cwd: Some(true),
             cpus: Some("-2".to_string()),
             memory: Some("4G".to_string()),
         };
@@ -1070,13 +1320,18 @@ mod tests {
 
         // Verify all fields were merged
         assert_eq!(base.log_level, Some(LevelFilter::Debug));
-        assert_eq!(base.name, Some("test-sandbox".to_string()));
+        assert_eq!(base.join, Some("test-layer".to_string()));
         assert_eq!(base.storage_dir, Some("/tmp/test".to_string()));
         assert!(matches!(base.net, Some(Network::Host)));
         assert_eq!(base.ignored, Some(true));
-        assert_eq!(base.audio, Some(true));
         assert_eq!(base.cpus, Some("-2".to_string()));
         assert_eq!(base.memory, Some("4G".to_string()));
+        assert_eq!(base.no_default_llm_binds, Some(true));
+        assert_eq!(base.no_bind_cwd, Some(true));
+        assert_eq!(
+            sources.get("no_default_llm_binds"),
+            Some(&"test-config".to_string())
+        );
         assert_eq!(sources.get("cpus"), Some(&"test-config".to_string()));
         assert_eq!(sources.get("memory"), Some(&"test-config".to_string()));
 

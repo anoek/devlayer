@@ -20,8 +20,7 @@ pub fn can_access(
     // Save dumpable flag before EUID toggle. Changing EUID from root to
     // non-root sets dumpable to SUID_DUMP_ROOT (2) as a side effect, which
     // breaks pidfd-based setns() on Linux 6.18+ (requires dumpable == 1).
-    let saved_dumpable =
-        unsafe { libc::prctl(libc::PR_GET_DUMPABLE) };
+    let saved_dumpable = unsafe { libc::prctl(libc::PR_GET_DUMPABLE) };
 
     setegid(gid)?;
     seteuid(uid)?;

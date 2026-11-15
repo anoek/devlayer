@@ -1,15 +1,15 @@
 [package]
-name    = "sandbox"
+name    = "devlayer"
 version = "0.4.0-dev"
 edition = "2024"
 include = ["src/**", "Cargo.toml", "clippy.toml", "*.lock", "tests/**", "Makefile"]
 
 [[bin]]
-name = "sandbox"
+name = "devlayer"
 path = "src/main.rs"
 
 [lib]
-name = "sandbox"
+name = "devlayer"
 path = "src/lib.rs"
 
 [lints.rust]

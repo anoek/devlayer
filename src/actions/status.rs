@@ -1,13 +1,13 @@
 use crate::{
     config::Config,
-    outln,
-    sandbox::{
-        Sandbox,
+    layer::{
+        Layer,
         changes::{
             ChangeEntries, EntryOperation,
             changes::{by_destination, by_reverse_source},
         },
     },
+    outln,
     util::set_json_output,
 };
 use anyhow::Result;
@@ -16,13 +16,13 @@ use serde_json::{Value, json};
 
 pub fn status(
     config: &Config,
-    sandbox: &Sandbox,
+    layer: &Layer,
     patterns: &[String],
 ) -> Result<()> {
-    trace!("Status of sandbox {}", sandbox.name);
+    trace!("Status of layer {}", layer.name);
 
     let cwd = std::env::current_dir()?;
-    let all_changes = sandbox.changes(config)?;
+    let all_changes = layer.changes(config)?;
     let mut changes = all_changes.matching(&cwd, patterns);
     let non_matching_count =
         ChangeEntries::calculate_non_matching_count(&all_changes, &changes);

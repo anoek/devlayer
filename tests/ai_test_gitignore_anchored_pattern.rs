@@ -7,18 +7,18 @@ use std::path::Path;
 
 #[rstest]
 fn test_gitignore_anchored_directory_pattern(
-    mut sandbox: SandboxManager,
+    mut layer: LayerManager,
 ) -> Result<()> {
-    sandbox.set_ignored(false); // Don't automatically add --ignored for gitignore tests
+    layer.set_ignored(false); // Don't automatically add --ignored for gitignore tests
 
     // Create a working directory using test_filename
-    let test_dir = sandbox.test_filename("anchored-dir-test");
+    let test_dir = layer.test_filename("anchored-dir-test");
     std::fs::create_dir_all(&test_dir)?;
 
     // Create parent .gitignore to un-ignore test directory
     let parent_gitignore_path =
-        format!("generated-test-data/{}/.gitignore", &sandbox.name);
-    sandbox.run(&[
+        format!("generated-test-data/{}/.gitignore", &layer.name);
+    layer.run(&[
         "sh",
         "-c",
         &format!("echo '!*/' > {}", parent_gitignore_path),
@@ -33,7 +33,7 @@ fn test_gitignore_anchored_directory_pattern(
     std::fs::create_dir_all(Path::new(&test_dir).join("dist/assets"))?;
     std::fs::create_dir_all(Path::new(&test_dir).join("src"))?;
 
-    // Create .gitignore file within the sandbox
+    // Create .gitignore file within the layer
     let gitignore_contents = r#"
 # Anchored directory pattern
 /target
@@ -42,7 +42,7 @@ fn test_gitignore_anchored_directory_pattern(
 /dist/
 "#;
     let gitignore_path = Path::new(&test_dir).join(".gitignore");
-    sandbox.run(&[
+    layer.run(&[
         "sh",
         "-c",
         &format!(
@@ -52,7 +52,7 @@ fn test_gitignore_anchored_directory_pattern(
         ),
     ])?;
 
-    // Create test files - we need to create them in the sandbox to see changes
+    // Create test files - we need to create them in the layer to see changes
     let test_files = vec![
         // Files under /target - should all be ignored
         ("target/foo", true),
@@ -69,10 +69,10 @@ fn test_gitignore_anchored_directory_pattern(
         ("src/main.rs", false),
     ];
 
-    // Create files within the sandbox
+    // Create files within the layer
     for (file, _) in &test_files {
         let file_path = Path::new(&test_dir).join(file);
-        sandbox.run(&[
+        layer.run(&[
             "sh",
             "-c",
             &format!("echo 'test content' > {}", file_path.to_str().unwrap()),
@@ -80,15 +80,15 @@ fn test_gitignore_anchored_directory_pattern(
     }
 
     // Run status WITHOUT --ignored flag to see only non-ignored files
-    sandbox.run(&["status", &test_dir])?;
-    let status_without_ignored = sandbox.last_stdout.clone();
+    layer.run(&["status", &test_dir])?;
+    let status_without_ignored = layer.last_stdout.clone();
 
     // Now run with --ignored flag to see all files
     // We need to temporarily set ignored to true to add the flag
-    sandbox.set_ignored(true);
-    sandbox.run(&["status", &test_dir])?;
-    let status_with_ignored = sandbox.last_stdout.clone();
-    sandbox.set_ignored(false); // Reset it back
+    layer.set_ignored(true);
+    layer.run(&["status", &test_dir])?;
+    let status_with_ignored = layer.last_stdout.clone();
+    layer.set_ignored(false); // Reset it back
 
     // Check which files appear in each output
     for (file, should_be_ignored) in &test_files {

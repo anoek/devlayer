@@ -7,16 +7,14 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 #[rstest]
-fn ai_test_sigterm_stops_sandbox(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.run(&["true"])?;
+fn ai_test_sigterm_stops_layer(mut layer: LayerManager) -> Result<()> {
+    layer.hold()?;
 
-    sandbox.run(&["config", "sandbox_dir"])?;
-    let pid_file = format!("{}.pid", sandbox.last_stdout.trim());
-    let pid = std::fs::read_to_string(&pid_file)?.trim().to_string();
+    let pid = layer.pid1()?.to_string();
     let proc_dir = format!("/proc/{}", pid);
     assert!(Path::new(&proc_dir).exists());
 
-    // The sandbox's PID 1 exits when asked to terminate
+    // The layer's PID 1 exits when asked to terminate
     let status = std::process::Command::new("sudo")
         .args(["kill", "-TERM", &pid])
         .status()?;
@@ -27,8 +25,8 @@ fn ai_test_sigterm_stops_sandbox(mut sandbox: SandboxManager) -> Result<()> {
     }
     assert!(!Path::new(&proc_dir).exists());
 
-    // and the sandbox starts again the next time it's used
-    sandbox.run(&["echo", "restarted"])?;
-    assert_eq!(sandbox.last_stdout.trim(), "restarted");
+    // and the layer starts again the next time it's used
+    layer.run(&["echo", "restarted"])?;
+    assert_eq!(layer.last_stdout.trim(), "restarted");
     Ok(())
 }

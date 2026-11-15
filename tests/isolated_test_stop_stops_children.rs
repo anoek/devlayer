@@ -8,9 +8,9 @@ use std::thread::sleep;
 use std::time::Duration;
 
 #[rstest]
-fn test_stop_stop_children(mut sandbox: SandboxManager) -> Result<()> {
-    let mut c1 = sandbox.run_in_background(&["sleep", "9897135"])?;
-    let mut c2 = sandbox.run_in_background(&["sleep", "9897135"])?;
+fn test_stop_stop_children(mut layer: LayerManager) -> Result<()> {
+    let mut c1 = layer.run_in_background(&["sleep", "9897135"])?;
+    let mut c2 = layer.run_in_background(&["sleep", "9897135"])?;
 
     // ensure they start up
     for _ in 0..1000 {
@@ -20,7 +20,7 @@ fn test_stop_stop_children(mut sandbox: SandboxManager) -> Result<()> {
         let lines: Vec<&str> = ps_output
             .lines()
             .filter(|line| {
-                line.contains("sleep 9897135") && !line.contains("--name")
+                line.contains("sleep 9897135") && !line.contains("--join")
             })
             .collect();
         if lines.len() == 2 {
@@ -34,13 +34,13 @@ fn test_stop_stop_children(mut sandbox: SandboxManager) -> Result<()> {
     let lines: Vec<&str> = ps_output
         .lines()
         .filter(|line| {
-            line.contains("sleep 9897135") && !line.contains("--name")
+            line.contains("sleep 9897135") && !line.contains("--join")
         })
         .collect();
     assert!(lines.len() == 2);
 
     // kill them
-    assert!(sandbox.pass(&["stop"]));
+    assert!(layer.pass(&["stop"]));
 
     // wait for that to happen
     c1.wait()?;
@@ -52,7 +52,7 @@ fn test_stop_stop_children(mut sandbox: SandboxManager) -> Result<()> {
     let lines: Vec<&str> = ps_output
         .lines()
         .filter(|line| {
-            line.contains("sleep 9897135") && !line.contains("--name")
+            line.contains("sleep 9897135") && !line.contains("--join")
         })
         .collect();
     assert!(lines.is_empty());

@@ -1,7 +1,7 @@
 use crate::{
     config::Config,
+    layer::{Layer, changes::changes::by_staged_descending},
     outln,
-    sandbox::{Sandbox, changes::changes::by_staged_descending},
     util::sync_and_drop_caches,
 };
 use anyhow::{Context, Result};
@@ -9,13 +9,13 @@ use log::{debug, trace};
 
 pub fn reject(
     config: &Config,
-    sandbox: &Sandbox,
+    layer: &Layer,
     patterns: &[String],
 ) -> Result<()> {
-    trace!("Rejecting changes from sandbox {}", sandbox.name);
+    trace!("Rejecting changes from layer {}", layer.name);
 
     let cwd = std::env::current_dir()?;
-    let changes = sandbox.changes(config)?;
+    let changes = layer.changes(config)?;
 
     let mut changes = changes.matching(&cwd, patterns);
     changes.sort_by(by_staged_descending);

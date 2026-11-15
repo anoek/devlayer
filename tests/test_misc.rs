@@ -8,24 +8,25 @@ use rstest::*;
 use serde_json::Value;
 
 #[rstest]
-fn test_program_runs_with_no_args(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.run(&["env"])?;
-    sandbox.run(&["status"])?;
-    sandbox.run(&["touch", "testfile"])?;
-    sandbox.run(&["status"])?;
-    sandbox.run(&["list"])?;
-    sandbox.run(&["diff"])?;
-    sandbox.run(&[])?; // should launch bash, which should exit without an input terminal
+fn test_program_runs_with_no_args(mut layer: LayerManager) -> Result<()> {
+    layer.run(&["env"])?;
+    layer.run(&["status", "."])?;
+    layer.run(&["touch", "testfile"])?;
+    layer.run(&["status", "."])?;
+    layer.run(&["list"])?;
+    layer.run(&["diff", "."])?;
+    layer.run(&[])?; // should launch bash, which should exit without an input terminal
     Ok(())
 }
 
 #[rstest]
-fn test_weird_sudo_env_variables(sandbox: SandboxManager) -> Result<()> {
-    let sandbox_bin = sandbox.sandbox_bin.clone();
+fn test_weird_sudo_env_variables(layer: LayerManager) -> Result<()> {
+    let devlayer_bin = layer.devlayer_bin.clone();
 
-    let mut cmd = Command::new("sudo");
-    cmd.args(["-E", "SUDO_UID=nan", &sandbox_bin]);
-    cmd.args([format!("--name={}", &sandbox.name)]);
+    let mut cmd = Command::new(&devlayer_bin);
+    cmd.env("SUDO_UID", "nan");
+    cmd.args([format!("--join={}", &layer.name)]);
+    let mut cmd = as_root(&cmd);
     let output = cmd.output()?;
     assert!(output.status.code().unwrap() != 0);
     assert!(
@@ -33,9 +34,10 @@ fn test_weird_sudo_env_variables(sandbox: SandboxManager) -> Result<()> {
             .contains("Failed to parse SUDO_UID")
     );
 
-    let mut cmd = Command::new("sudo");
-    cmd.args(["-E", "SUDO_GID=nan", &sandbox_bin]);
-    cmd.args([format!("--name={}", &sandbox.name)]);
+    let mut cmd = Command::new(&devlayer_bin);
+    cmd.env("SUDO_GID", "nan");
+    cmd.args([format!("--join={}", &layer.name)]);
+    let mut cmd = as_root(&cmd);
     let output = cmd.output()?;
     assert!(output.status.code().unwrap() != 0);
     assert!(
@@ -43,9 +45,10 @@ fn test_weird_sudo_env_variables(sandbox: SandboxManager) -> Result<()> {
             .contains("Failed to parse SUDO_GID")
     );
 
-    let mut cmd = Command::new("sudo");
-    cmd.args(["-E", "SUDO_HOME=", &sandbox_bin]);
-    cmd.args([format!("--name={}", &sandbox.name)]);
+    let mut cmd = Command::new(&devlayer_bin);
+    cmd.env("SUDO_HOME", "");
+    cmd.args([format!("--join={}", &layer.name)]);
+    let mut cmd = as_root(&cmd);
     let output = cmd.output()?;
     assert!(output.status.code().unwrap() != 0);
     assert!(
@@ -53,9 +56,10 @@ fn test_weird_sudo_env_variables(sandbox: SandboxManager) -> Result<()> {
             .contains("Home directory is not absolute")
     );
 
-    let mut cmd = Command::new("sudo");
-    cmd.args(["-E", "SUDO_HOME=~/foobar", &sandbox_bin]);
-    cmd.args([format!("--name={}", &sandbox.name)]);
+    let mut cmd = Command::new(&devlayer_bin);
+    cmd.env("SUDO_HOME", "~/foobar");
+    cmd.args([format!("--join={}", &layer.name)]);
+    let mut cmd = as_root(&cmd);
     let output = cmd.output()?;
     assert!(output.status.code().unwrap() != 0);
 
@@ -64,9 +68,10 @@ fn test_weird_sudo_env_variables(sandbox: SandboxManager) -> Result<()> {
             .contains("Home directory is not absolute")
     );
 
-    let mut cmd = Command::new("sudo");
-    cmd.args(["-E", "SUDO_HOME=/invalid-home-directory", &sandbox_bin]);
-    cmd.args([format!("--name={}", &sandbox.name)]);
+    let mut cmd = Command::new(&devlayer_bin);
+    cmd.env("SUDO_HOME", "/invalid-home-directory");
+    cmd.args([format!("--join={}", &layer.name)]);
+    let mut cmd = as_root(&cmd);
     let output = cmd.output()?;
     assert!(output.status.code().unwrap() != 0);
 
@@ -88,15 +93,11 @@ fn test_weird_sudo_env_variables(sandbox: SandboxManager) -> Result<()> {
         absolute_dir_with_spaces.display()
     );
 
-    let mut cmd = Command::new("sudo");
-    cmd.args([
-        "-E",
-        format!("SANDBOX_STORAGE_DIR={}", absolute_dir_with_spaces.display())
-            .as_str(),
-        &sandbox_bin,
-    ]);
-    cmd.args([format!("--name={}", &sandbox.name)]);
+    let mut cmd = Command::new(&devlayer_bin);
+    cmd.env("DEVLAYER_STORAGE_DIR", &absolute_dir_with_spaces);
+    cmd.args([format!("--join={}", &layer.name)]);
     cmd.args(["true"]);
+    let mut cmd = as_root(&cmd);
     println!("cmd: {:?}", cmd);
     let output = cmd.output()?;
     println!("output: {}", String::from_utf8_lossy(&output.stdout));
@@ -117,14 +118,14 @@ fn test_weird_sudo_env_variables(sandbox: SandboxManager) -> Result<()> {
 }
 
 #[rstest]
-fn test_setuid_works_like_sudo(mut sandbox: SandboxManager) -> Result<()> {
-    let sudo_output = sandbox.run(&["whoami"])?;
+fn test_setuid_works_like_sudo(mut layer: LayerManager) -> Result<()> {
+    let sudo_output = layer.run(&["whoami"])?;
 
-    let sandbox_bin = sandbox.sandbox_bin.clone();
-    let sandbox_setuid = sandbox_bin + "-setuid";
+    let devlayer_bin = layer.devlayer_bin.clone();
+    let devlayer_setuid = devlayer_bin + "-setuid";
 
-    let mut cmd = Command::new(&sandbox_setuid);
-    cmd.args([format!("--name={}", &sandbox.name)]);
+    let mut cmd = Command::new(&devlayer_setuid);
+    cmd.args([format!("--join={}", &layer.name)]);
     cmd.args(["whoami"]);
     let setuid_output = cmd.output()?;
 
@@ -134,49 +135,49 @@ fn test_setuid_works_like_sudo(mut sandbox: SandboxManager) -> Result<()> {
 }
 
 #[rstest]
-fn test_sandbox_no_print_to_stdout_by_default(
-    mut sandbox: SandboxManager,
+fn test_layer_no_print_to_stdout_by_default(
+    mut layer: LayerManager,
 ) -> Result<()> {
-    sandbox.run(&["echo", "-n", "Hello, world!"])?;
-    assert_eq!(&sandbox.last_stdout, "Hello, world!");
+    layer.run(&["echo", "-n", "Hello, world!"])?;
+    assert_eq!(&layer.last_stdout, "Hello, world!");
     Ok(())
 }
 
 #[rstest]
-fn test_sandbox_env_variable_is_set(mut sandbox: SandboxManager) -> Result<()> {
-    let output = sandbox.run(&["sh", "-c", "echo -n $SANDBOX"])?;
-    assert_eq!(String::from_utf8_lossy(&output.stdout), sandbox.name);
+fn test_devlayer_env_variable_is_set(mut layer: LayerManager) -> Result<()> {
+    let output = layer.run(&["sh", "-c", "echo -n $DEVLAYER"])?;
+    assert_eq!(String::from_utf8_lossy(&output.stdout), layer.name);
     Ok(())
 }
 
 #[rstest]
-fn test_config(mut sandbox: SandboxManager) -> Result<()> {
-    let output = sandbox.run(&["config", "name"])?;
+fn test_config(mut layer: LayerManager) -> Result<()> {
+    let output = layer.run(&["config", "name"])?;
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
-        format!("{}\n", sandbox.name)
+        format!("{}\n", layer.name)
     );
 
-    let output = sandbox.run(&["config"])?;
+    let output = layer.run(&["config"])?;
     assert!(output.status.success());
 
-    let output = sandbox.run(&["--json", "config"])?;
+    let output = layer.run(&["--json", "config"])?;
     assert!(output.status.success());
     let json: Value =
         serde_json::from_str(&String::from_utf8_lossy(&output.stdout))?;
-    assert_eq!(json["name"], sandbox.name);
+    assert_eq!(json["name"], layer.name);
 
-    assert!(sandbox.xfail(&["config", "non-existent-key"]));
+    assert!(layer.xfail(&["config", "non-existent-key"]));
     Ok(())
 }
 
 #[rstest]
-fn test_shell_completion_generation(mut sandbox: SandboxManager) -> Result<()> {
-    assert!(sandbox.epass(&[], "COMPLETE", "zsh"));
-    assert!(sandbox.epass(&[], "COMPLETE", "bash"));
-    assert!(sandbox.epass(&[], "COMPLETE", "fish"));
-    assert!(sandbox.epass(&[], "COMPLETE", "elvish"));
-    assert!(sandbox.exfail(&[], "COMPLETE", "invalid-shell"));
+fn test_shell_completion_generation(mut layer: LayerManager) -> Result<()> {
+    assert!(layer.epass(&[], "COMPLETE", "zsh"));
+    assert!(layer.epass(&[], "COMPLETE", "bash"));
+    assert!(layer.epass(&[], "COMPLETE", "fish"));
+    assert!(layer.epass(&[], "COMPLETE", "elvish"));
+    assert!(layer.exfail(&[], "COMPLETE", "invalid-shell"));
     Ok(())
 }
 
@@ -186,11 +187,11 @@ fn test_shell_completion_generation(mut sandbox: SandboxManager) -> Result<()> {
  * a real file but with the limits of filename sizes and redirect=off I think it's
  * hard to do, and the code is one line simple so meh. */
 #[rstest]
-fn exercise_large_xattr(mut sandbox: SandboxManager) -> Result<()> {
-    sandbox.run(&["touch", "testfile"])?;
+fn exercise_large_xattr(mut layer: LayerManager) -> Result<()> {
+    layer.run(&["touch", "testfile"])?;
     let long_value = "a".repeat(300);
 
-    let upper_cwd_output = sandbox.run(&["config", "upper_cwd"])?;
+    let upper_cwd_output = layer.run(&["config", "upper_cwd"])?;
     let upper_cwd = String::from_utf8_lossy(&upper_cwd_output.stdout)
         .trim()
         .to_string();
@@ -211,21 +212,21 @@ fn exercise_large_xattr(mut sandbox: SandboxManager) -> Result<()> {
         .status()?;
 
     //assert!(status.success());
-    sandbox.run(&["status"])?;
+    layer.run(&["status", "."])?;
 
     Ok(())
 }
 
 #[rstest]
 fn test_no_xdg() -> Result<()> {
-    let mut sandbox = SandboxManager::new();
-    assert!(sandbox.epass(&["true"], "TEST_EMPTY_XDG_RUNTIME_DIR", "1"));
+    let mut layer = LayerManager::new();
+    assert!(layer.epass(&["true"], "TEST_EMPTY_XDG_RUNTIME_DIR", "1"));
     Ok(())
 }
 
 #[rstest]
-fn test_empty_config(mut sandbox: SandboxManager) -> Result<()> {
-    let output = sandbox.run(&["--config=", "config", "config_files"])?;
+fn test_empty_config(mut layer: LayerManager) -> Result<()> {
+    let output = layer.run(&["--config=", "config", "config_files"])?;
     assert_eq!(String::from_utf8_lossy(&output.stdout), "\n");
     Ok(())
 }

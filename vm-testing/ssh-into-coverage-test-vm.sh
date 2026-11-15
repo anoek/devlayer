@@ -25,4 +25,4 @@ fi
 
 echo "Successfully got IP address: $COVERAGE_IP"
 
-ssh -o 'StrictHostKeyChecking no' -i generated/id_sandbox_test_vm_key sandbox@$COVERAGE_IP
+ssh -o 'StrictHostKeyChecking no' -i generated/id_devlayer_test_vm_key devlayer@$COVERAGE_IP

@@ -5,120 +5,120 @@ use fixtures::*;
 use rstest::*;
 
 #[rstest]
-fn test_cli(mut sandbox: SandboxManager) -> Result<()> {
-    assert!(sandbox.pass(&["--version"]));
-    assert!(sandbox.pass(&["--", "ls"]));
-    assert!(sandbox.xfail(&["--bad-option"]));
+fn test_cli(mut layer: LayerManager) -> Result<()> {
+    assert!(layer.pass(&["--version"]));
+    assert!(layer.pass(&["--", "ls"]));
+    assert!(layer.xfail(&["--bad-option"]));
 
-    assert!(sandbox.pass(&["--net", "config"]));
-    assert!(sandbox.last_stdout.contains("net=host"));
-    assert!(sandbox.pass(&["--net=none", "config"]));
-    assert!(sandbox.last_stdout.contains("net=none"));
-    assert!(sandbox.pass(&["--net=host", "config"]));
-    assert!(sandbox.last_stdout.contains("net=host"));
-    assert!(sandbox.xfail(&["--net=foobar", "config"]));
+    assert!(layer.pass(&["--net", "config"]));
+    assert!(layer.last_stdout.contains("net=host"));
+    assert!(layer.pass(&["--net=none", "config"]));
+    assert!(layer.last_stdout.contains("net=none"));
+    assert!(layer.pass(&["--net=host", "config"]));
+    assert!(layer.last_stdout.contains("net=host"));
+    assert!(layer.xfail(&["--net=foobar", "config"]));
 
-    assert!(sandbox.pass(&["--name", "test-cli", "config"]));
-    assert!(sandbox.last_stdout.contains("name=test-cli"));
-    assert!(sandbox.pass(&["--name=test-cli", "config"]));
-    assert!(sandbox.last_stdout.contains("name=test-cli"));
+    assert!(layer.pass(&["--join", "test-cli", "config"]));
+    assert!(layer.last_stdout.contains("name=test-cli"));
+    assert!(layer.pass(&["--join=test-cli", "config"]));
+    assert!(layer.last_stdout.contains("name=test-cli"));
 
-    assert!(sandbox.pass(&["--storage-dir=/tmp/sandbox", "config"]));
-    assert!(sandbox.last_stdout.contains("storage_dir=/tmp/sandbox"));
+    assert!(layer.pass(&["--storage-dir=/tmp/layer", "config"]));
+    assert!(layer.last_stdout.contains("storage_dir=/tmp/layer"));
 
-    assert!(sandbox.pass(&["--storage-dir=/tmp/sandbox", "config"]));
-    assert!(sandbox.last_stdout.contains("storage_dir=/tmp/sandbox"));
+    assert!(layer.pass(&["--storage-dir=/tmp/layer", "config"]));
+    assert!(layer.last_stdout.contains("storage_dir=/tmp/layer"));
 
     // default values check
-    sandbox.no_default_options = true;
-    assert!(sandbox.pass(&["--no-config", "config"]));
-    assert!(sandbox.last_stdout.contains("name=sandbox"));
-    assert!(sandbox.last_stdout.contains("net=none"));
+    layer.no_default_options = true;
+    assert!(layer.pass(&["--no-config", "config"]));
+    assert!(layer.last_stdout.contains("name=devlayer"));
+    assert!(layer.last_stdout.contains("net=host"));
 
     // Test config_files display
-    assert!(sandbox.pass(&["--no-config", "config", "config_files"]));
-    assert!(sandbox.last_stdout == "\n"); // Should be empty with --no-config
+    assert!(layer.pass(&["--no-config", "config", "config_files"]));
+    assert!(layer.last_stdout == "\n"); // Should be empty with --no-config
 
     Ok(())
 }
 
 #[rstest]
-fn test_cli_with_config(mut sandbox: SandboxManager) -> Result<()> {
+fn test_cli_with_config(mut layer: LayerManager) -> Result<()> {
     let parent_config = r#"
     net = "none"
-    name = "parent"
+    join = "parent"
     log_level = "trace"
-    storage_dir = "/tmp/sandbox1"
+    storage_dir = "/tmp/layer1"
     bind = [".cargo"]
     "#;
     let config = r#"
     net = "host"
-    name = "test-cli-with-config"
+    join = "test-cli-with-config"
     log_level = "info"
-    storage_dir = "/tmp/sandbox2"
+    storage_dir = "/tmp/layer2"
     bind = [".cargo"]
     "#;
 
-    let _ = std::fs::remove_file(".sandbox.toml");
-    let _ = std::fs::remove_file("../.sandbox.conf");
+    let _ = std::fs::remove_file(".devlayer.toml");
+    let _ = std::fs::remove_file("../.devlayer.conf");
 
-    std::fs::write("../.sandbox.conf", parent_config)?;
-    sandbox.no_default_options = true;
-    assert!(sandbox.epass(&["config"], "SANDBOX_BIND", ".cargo"));
-    assert!(sandbox.last_stdout.contains("name=parent"));
-    assert!(sandbox.last_stdout.contains("net=none"));
-    assert!(sandbox.last_stdout.contains("log_level=TRACE"));
-    assert!(sandbox.last_stdout.contains("storage_dir=/tmp/sandbox1"));
-    assert!(sandbox.last_stdout.contains(".cargo"));
+    std::fs::write("../.devlayer.conf", parent_config)?;
+    layer.no_default_options = true;
+    assert!(layer.epass(&["config"], "DEVLAYER_BIND", ".cargo"));
+    assert!(layer.last_stdout.contains("name=parent"));
+    assert!(layer.last_stdout.contains("net=none"));
+    assert!(layer.last_stdout.contains("log_level=TRACE"));
+    assert!(layer.last_stdout.contains("storage_dir=/tmp/layer1"));
+    assert!(layer.last_stdout.contains(".cargo"));
 
-    std::fs::write(".sandbox.toml", config)?;
-    sandbox.no_default_options = true;
-    assert!(sandbox.pass(&["config", "--bind=.cargo"]));
-    assert!(sandbox.last_stdout.contains("name=test-cli-with-config"));
-    assert!(sandbox.last_stdout.contains("net=host"));
-    println!("{}", sandbox.last_stdout);
-    assert!(sandbox.last_stdout.contains("log_level=INFO"));
-    assert!(sandbox.last_stdout.contains("storage_dir=/tmp/sandbox2"));
+    std::fs::write(".devlayer.toml", config)?;
+    layer.no_default_options = true;
+    assert!(layer.pass(&["config", "--bind=.cargo"]));
+    assert!(layer.last_stdout.contains("name=test-cli-with-config"));
+    assert!(layer.last_stdout.contains("net=host"));
+    println!("{}", layer.last_stdout);
+    assert!(layer.last_stdout.contains("log_level=INFO"));
+    assert!(layer.last_stdout.contains("storage_dir=/tmp/layer2"));
 
-    std::fs::remove_file(".sandbox.toml")?;
-    std::fs::remove_file("../.sandbox.conf")?;
-
-    Ok(())
-}
-
-#[rstest]
-fn test_cli_with_env(mut sandbox: SandboxManager) -> Result<()> {
-    assert!(sandbox.epass(&["config"], "SANDBOX_NET", ""));
-    assert!(sandbox.epass(&["config"], "SANDBOX_NET", "host"));
-    assert!(sandbox.last_stdout.contains("net=host"));
-    assert!(sandbox.epass(&["config"], "SANDBOX_NET", "none"));
-    assert!(sandbox.last_stdout.contains("net=none"));
-    assert!(sandbox.exfail(&["config"], "SANDBOX_NET", "foobar"));
-    assert!(sandbox.last_stderr.contains("Invalid network type: foobar"));
-
-    assert!(sandbox.epass(&["config"], "SANDBOX_LOG_LEVEL", "trace"));
-    assert!(sandbox.last_stdout.contains("log_level=TRACE"));
-
-    assert!(sandbox.exfail(&["config"], "SANDBOX_LOG_LEVEL", "foobar"));
-    assert!(sandbox.last_stderr.contains("Invalid log level: foobar"));
-
-    assert!(sandbox.epass(&["config"], "SANDBOX_NAME", ""));
-    assert!(sandbox.epass(&["config"], "SANDBOX_NAME", "test-cli-with-env"));
-
-    assert!(sandbox.epass(&["config"], "SANDBOX_STORAGE_DIR", ""));
-    assert!(sandbox.epass(&["config"], "SANDBOX_STORAGE_DIR", "/tmp/sandbox"));
-    assert!(sandbox.last_stdout.contains("storage_dir=/tmp/sandbox"));
+    std::fs::remove_file(".devlayer.toml")?;
+    std::fs::remove_file("../.devlayer.conf")?;
 
     Ok(())
 }
 
 #[rstest]
-fn test_cli_resolve_failures(mut sandbox: SandboxManager) -> Result<()> {
-    assert!(sandbox.exfail(&["config"], "TEST_UNABLE_TO_OPEN_PROC_MOUNTS", ""));
-    assert!(sandbox.exfail(&["config"], "TEST_UNABLE_TO_FIND_MOUNT_POINT", ""));
-    assert!(sandbox.exfail(&["config"], "TEST_UNACCEPTABLE_MOUNT_TYPE", ""));
-    assert!(sandbox.xfail(&["--storage-dir=/bad/path", "config"]));
-    assert!(sandbox.last_stderr.contains("Insufficient access"));
+fn test_cli_with_env(mut layer: LayerManager) -> Result<()> {
+    assert!(layer.epass(&["config"], "DEVLAYER_NET", ""));
+    assert!(layer.epass(&["config"], "DEVLAYER_NET", "host"));
+    assert!(layer.last_stdout.contains("net=host"));
+    assert!(layer.epass(&["config"], "DEVLAYER_NET", "none"));
+    assert!(layer.last_stdout.contains("net=none"));
+    assert!(layer.exfail(&["config"], "DEVLAYER_NET", "foobar"));
+    assert!(layer.last_stderr.contains("Invalid network type: foobar"));
+
+    assert!(layer.epass(&["config"], "DEVLAYER_LOG_LEVEL", "trace"));
+    assert!(layer.last_stdout.contains("log_level=TRACE"));
+
+    assert!(layer.exfail(&["config"], "DEVLAYER_LOG_LEVEL", "foobar"));
+    assert!(layer.last_stderr.contains("Invalid log level: foobar"));
+
+    assert!(layer.epass(&["config"], "DEVLAYER_JOIN", ""));
+    assert!(layer.epass(&["config"], "DEVLAYER_JOIN", "test-cli-with-env"));
+
+    assert!(layer.epass(&["config"], "DEVLAYER_STORAGE_DIR", ""));
+    assert!(layer.epass(&["config"], "DEVLAYER_STORAGE_DIR", "/tmp/layer"));
+    assert!(layer.last_stdout.contains("storage_dir=/tmp/layer"));
+
+    Ok(())
+}
+
+#[rstest]
+fn test_cli_resolve_failures(mut layer: LayerManager) -> Result<()> {
+    assert!(layer.exfail(&["config"], "TEST_UNABLE_TO_OPEN_PROC_MOUNTS", ""));
+    assert!(layer.exfail(&["config"], "TEST_UNABLE_TO_FIND_MOUNT_POINT", ""));
+    assert!(layer.exfail(&["config"], "TEST_UNACCEPTABLE_MOUNT_TYPE", ""));
+    assert!(layer.xfail(&["--storage-dir=/bad/path", "config"]));
+    assert!(layer.last_stderr.contains("Insufficient access"));
 
     Ok(())
 }

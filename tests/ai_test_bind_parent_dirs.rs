@@ -6,21 +6,21 @@ use rstest::*;
 
 #[rstest]
 fn ai_test_bind_parent_dir_missing_on_host(
-    mut sandbox: SandboxManager,
+    mut layer: LayerManager,
 ) -> Result<()> {
-    let test_dir = sandbox.test_filename("bind_parent");
+    let test_dir = layer.test_filename("bind_parent");
     std::fs::create_dir_all(&test_dir)?;
     std::fs::write(format!("{}/test.txt", test_dir), "test content")?;
 
     // Neither the target nor its parent exist on the host, so the parent is
-    // created inside the sandbox without any host ownership to mirror
-    let parent = format!("/run/{}", sandbox.name);
+    // created inside the layer without any host ownership to mirror
+    let parent = format!("/run/{}", layer.name);
     assert!(!std::path::Path::new(&parent).exists());
     let target = format!("{}/mnt", parent);
 
     let bind = format!("{}:{}", test_dir, target);
 
-    sandbox.run(&[
+    layer.run(&[
         "--no-config",
         "--bind",
         &bind,
@@ -29,16 +29,16 @@ fn ai_test_bind_parent_dir_missing_on_host(
         "%u",
         &parent,
     ])?;
-    assert_eq!(sandbox.last_stdout.trim(), "0");
+    assert_eq!(layer.last_stdout.trim(), "0");
 
-    sandbox.run(&[
+    layer.run(&[
         "--no-config",
         "--bind",
         &bind,
         "cat",
         &format!("{}/test.txt", target),
     ])?;
-    assert_eq!(sandbox.last_stdout.trim(), "test content");
+    assert_eq!(layer.last_stdout.trim(), "test content");
 
     Ok(())
 }

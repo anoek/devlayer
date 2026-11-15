@@ -1,6 +1,6 @@
 #![allow(static_mut_refs)]
-use crate::sandbox::Sandbox;
-use crate::util::drop_privileges;
+use crate::layer::Layer;
+use crate::util::{Lock, drop_privileges};
 use anyhow::{Context, Result, anyhow};
 use libc::syscall;
 use log::trace;
@@ -17,15 +17,18 @@ unsafe extern "C" {
     fn __llvm_profile_set_filename(filename: *const i8);
 }
 
-impl Sandbox {
+impl Layer {
     /**
-     * Exec within the provided sandbox. This function never returns on
-     * success.
+     * Exec within the provided layer. This function never returns on
+     * success. `lock` is the layer lock, which keeps PID 1 from shutting the
+     * layer down until our command is running in it.
      */
-    pub fn exec(&self, command: &[String]) -> Result<()> {
+    pub fn exec(&self, command: &[String], lock: Box<Lock>) -> Result<()> {
         let cwd = std::env::current_dir()
             .context(format!("failed to get current directory"))?;
 
+        /* With host networking, PID 1 is in the host's network namespace, so
+         * CLONE_NEWNET just joins that */
         let ns_flags = libc::CLONE_NEWNS
             | libc::CLONE_NEWPID
             | libc::CLONE_NEWIPC
@@ -34,16 +37,16 @@ impl Sandbox {
             | libc::CLONE_NEWUTS;
 
         #[cfg(feature = "coverage")]
-        let ns_flags = if std::env::var_os("TEST_UNABLE_TO_JOIN_SANDBOX")
+        let ns_flags = if std::env::var_os("TEST_UNABLE_TO_JOIN_LAYER")
             .is_some()
         {
-            // in this test case we are failing to enter a sandbox so our
-            // .profraw file will be outside of the sandbox, so we'll place
+            // in this test case we are failing to enter a layer so our
+            // .profraw file will be outside of the layer, so we'll place
             // it directly where we want it for coverage analysis
             unsafe {
                 __llvm_profile_set_filename(
                     CString::new(
-                        format!("coverage/profraw/join-sandbox-failure-{}-{}-%m.profraw",
+                        format!("coverage/profraw/join-layer-failure-{}-{}-%m.profraw",
                             self.pid,
                             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
                                 .context("Failed to get current time")?
@@ -82,25 +85,25 @@ impl Sandbox {
             libc::prctl(libc::PR_SET_DUMPABLE, 1);
         };
 
-        /* Join the sandbox's cgroup so we're subject to its resource limits.
-         * This needs to happen before we enter the sandbox's mount namespace,
+        /* Join the layer's cgroup so we're subject to its resource limits.
+         * This needs to happen before we enter the layer's mount namespace,
          * where the cgroup filesystem is read-only. */
         self.join_cgroup()?;
 
-        /* Join the sandbox namespaces */
+        /* Join the layer namespaces */
         let pid_fd = pidfd_open(self.pid, 0)?;
         if (unsafe { setns(pid_fd, ns_flags) }) != 0 {
             return Err(anyhow!(
-                "Failed to join sandbox namespaces: {}",
+                "Failed to join layer namespaces: {}",
                 nix::errno::Errno::last()
             ));
         }
 
-        // Enter the sandbox mount namespace
-        chdir("/").context(format!("failed to chdir to /"))?; // This will be the sandbox root
-        chroot(".").context(format!("failed to chroot to ."))?; // Now we fully enter the sandbox namespace
+        // Enter the layer mount namespace
+        chdir("/").context(format!("failed to chdir to /"))?; // This will be the layer root
+        chroot(".").context(format!("failed to chroot to ."))?; // Now we fully enter the layer namespace
 
-        /* Restore our CWD to be within our sandbox */
+        /* Restore our CWD to be within our layer */
         trace!("Setting CWD to {}", cwd.display());
         std::env::set_current_dir(&cwd)
             .context(format!("failed to set CWD to {}", cwd.display()))?;
@@ -113,15 +116,28 @@ impl Sandbox {
         ))?;
 
         unsafe {
-            std::env::set_var("SANDBOX", self.name.clone());
+            std::env::set_var("DEVLAYER", self.name.clone());
             std::env::set_var(
-                "SANDBOX_STORAGE_DIR",
+                "DEVLAYER_STORAGE_DIR",
                 self.data_storage_dir.clone(),
             );
         }
 
+        /* Stands in for a command that's slow to start, e.g. on a loaded
+         * machine */
+        #[cfg(feature = "coverage")]
+        if let Some(ms) = std::env::var("TEST_DELAY_FORK")
+            .ok()
+            .and_then(|ms| ms.parse().ok())
+        {
+            std::thread::sleep(std::time::Duration::from_millis(ms));
+        }
+
         /* We need to fork to properly enter the PID namespace */
         let result = unsafe { fork() }.context(format!("failed to fork"))?;
+        /* Our command is in the layer's PID namespace now, where PID 1 sees
+         * it */
+        drop(lock);
         match result {
             ForkResult::Parent { child } => {
                 /* Parent process */

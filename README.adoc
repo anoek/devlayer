@@ -4,62 +4,59 @@
 //
 
 ifndef::env-github,env-vscode[]
-= sandbox(1)
+= devlayer(1)
 :doctype: manpage
-:man manual: Sandbox Manual
+:man manual: devlayer Manual
 :man source: 0.3.0
 :man-linkstyle: pass:[blue R < >]
 endif::[]
 
 ifdef::env-github,env-vscode[]
-= Sandbox
+= devlayer
 endif::[]
 
 ifndef::env-github,env-vscode[]
 == Name
-sandbox -
+devlayer -
 endif::[]
-A tool for creating lightweight containerized views of your computer for safely
-running semi-trusted programs and selectively managing their output.
+A Linux tool for creating lightweight containerized views, similar to sandboxes, 
+to better control what agents have access to, and to allow them to make either immediate or
+copy-on-write changes to specified locations. 
 
 == Description
 
-The `sandbox` tool creates lightweight containerized copy-on-write views of your
+The `devlayer` tool creates lightweight containerized copy-on-write views of your
 computer with optional network access. Its primary purpose is to run
 semi-trusted programs—such as AI agents, app images, or shell installers—in an
 environment that mirrors your host computer, while preventing them from
-modifying your system. It can also be useful during development and testing for
+modifying your system in undesired ways, but still letting them make changes in working
+directories. It can also be useful during development and testing for
 doing things like testing migrations or file reorganizations as it lets you run
 your code, examine the changes, reject the changes and try again rapidly.
 
 If you're satisfied with the outcome of your semi-trusted program, you can use the
-`sandbox` tool to selectively accept some or all of the changes made to your
+`devlayer` tool to selectively accept some or all of the changes made to your
 files. If you're not satisfied, you can simply reject the changes.
 
-Changes made within sandboxes are easily browsable and persist until you remove
-them, allowing you to reuse the same sandbox for as long as needed and by as many
-processes as desired. Sandboxes are also very lightweight and quick to create,
-making it practical to create new sandboxes for each task you need to perform.
+Changes made within layers are easily browsable and persist until you remove
+them, allowing you to reuse the same layer for as long as needed and by as many
+processes as desired. Layers are also very lightweight and quick to create,
+making it practical to create new layers for each task you need to perform.
 
 Please note: The use of the term `semi-trusted` is meant to distinguish code
 that may do things you don't want it to do, but isn't actively malicious in a
-sophisticated way. While the privilege escalations, data exfiltration, and other
-ways of escaping the sandbox would absolutely be considered a bug, it is not
-advised to run actively malicious code within a sandbox as there are not many
-layers to protect your host system from the malicious code, and it is easy for
-the code to detect it is running in a sandbox and potentially act accordingly.
-You should be using other more isolated environments for that sort of research.
-
+sophisticated way. For real security needs, always use at least a virtual
+machine if not a physically separate computer for your needs. 
 
 ifdef::env-github,env-vscode[]
 == Installation
 
 To build and install from source simply run `make install`.
 
-Arch Linux users can install the `sandbox-bin` package from the AUR.
+// Arch Linux users can install the `devlayer-bin` package from the AUR.
 
 For most other Linux distributions there are applicable binary packages available from
-the releases page: https://github.com/anoek/sandbox/releases
+the releases page: https://github.com/anoek/devlayer/releases
 
 Binaries are provided for x86_64 and arm64, but it should compile and work on 
 any architecture linux and rust supports.
@@ -72,41 +69,52 @@ endif::[]
 
 == Synopsis
             
-*sandbox* [OPTIONS] <SANDBOXED_COMMAND ...>
+*devlayer* [OPTIONS] <COMMAND ...>
 
-*sandbox* [OPTIONS] [ACTION] [ACTION_ARGUMENTS...]
+*devlayer* [OPTIONS] [ACTION] [ACTION_ARGUMENTS...]
 
 == Quick examples:
 
-Hop into a sandboxed shell
+Hop into a shell inside a new layer. The current directory is live, the rest
+of your system is layered.
 ```
- sandbox
+ devlayer
 ```
 
-Try that trendy web based install script in a sandbox first
+Hop back into the last layer you started in this directory
 ```
- curl -s https://trustmebro.sh | sandbox sh
+ devlayer --last
+```
+
+Try that trendy web based install script in a layer first
+```
+ curl -s https://trustmebro.sh | devlayer sh
 ```
 
 Let AIs run wild in YOLO mode without too much risk
 ```
- sandbox --net=host aider
+ devlayer aider
 ```
 
-Check what files were modified
+Check what files were modified outside the current directory
 ```
- sandbox status
-```
-
-Accept changes to all the python files in the current directory, copying
-them from the sandbox to the host system.
-```
- sandbox accept '*.py'
+ devlayer status
 ```
 
-Stop all running processes in the sandbox and unmount the copy on write filesystem overlays.
+Accept changes to your shell config, copying them from the layer to the host
+system
 ```
- sandbox stop
+ devlayer accept ~/.bashrc
+```
+
+Accept every change in the layer
+```
+ devlayer accept /
+```
+
+Stop all running processes in the layer and unmount the copy on write filesystem overlays.
+```
+ devlayer stop
 ```
 
 == Actions:
@@ -115,32 +123,40 @@ Stop all running processes in the sandbox and unmount the copy on write filesyst
   Read and display the configuration. Use in conjunction with `-v` to debug where configuration values are set.
 
 `list [PATTERNS]`::
-List running sandboxes matching these patterns (defaults to all)
+List running layers matching these patterns (defaults to all)
 
 `status [PATTERNS]`::
-Show status of the sandbox matching the patterns in the current directory, or specified
-patterns. Use `status /` to show status of all files in the sandbox.
+Show the changes in the layer. With no patterns this shows every change in the
+layer; patterns are relative to your current directory, for example
+`status .` shows only changes under the current directory.
 
-`diff`::
-Show changes in the sandbox relative to the current changes
+`diff [PATTERNS]`::
+Show the content of the changes in the layer. Like `status`, with no patterns
+this covers every change in the layer.
 
-`reject [PATTERNS]`::
-Reject changes in the sandbox. This works relative to your current working directory only, and changes outside of your working directory are ignored.
+`reject PATTERNS`::
+Reject the changes in the layer that match the patterns. At least one pattern
+is required; use `devlayer reject /` to reject every change in the layer.
+Relative patterns are relative to your current directory.
 
-`accept [PATTERNS]`::
-Accept changes in the sandbox. This works relative to your current working directory only, and changes outside of your working directory are ignored.
+`accept PATTERNS`::
+Accept the changes in the layer that match the patterns, copying them to your
+host. At least one pattern is required; use `devlayer accept /` to accept every
+change in the layer. Relative patterns are relative to your current directory.
 
 `sync`::
-Synchronize changes that might have occurred in your host file system so that they are reflected in running sandboxes. Note, this performs a system wide filesystem sync and flushes all caches.
+Synchronize changes that might have occurred in your host file system so that they are reflected in running layers. Note, this performs a system wide filesystem sync and flushes all caches.
 
 `stop [--all]`::
-Kill all processes in the sandbox and unmount the filesystems. Note this will not reject any changes
+Kill all processes in the layer and unmount the filesystems. Note this will not reject any changes.
+A layer also stops by itself once nothing is running in it any more; `stop`
+is for stopping it right away, along with anything still running in it.
 
 `delete [PATTERNS]`::
-Stop and delete all files associated with the sandboxes matching the provided patterns. If no patterns are provided, deletes the default or --name'd sandbox.
+Stop and delete all files associated with the layers matching the provided patterns. If no patterns are provided, deletes the default or --join'ed layer.
 
 `clean`::
-Delete stopped ephemeral sandboxes (created with `--new`) that are more than a week old, and all sandboxes left behind by the test suite.
+Delete stopped ephemeral layers (created with `--new`) that are more than a week old, and all layers left behind by the test suite.
 
 `help`::
 Print this message or the help of the given subcommand(s)
@@ -151,87 +167,116 @@ Print this message or the help of the given subcommand(s)
 `-v, --log-level=<LOG_LEVEL>`::
 Set the log level to one of trace, debug, info, warn, or error. `-v` is shorthand for enabling verbose (trace) logging.
 
-`--name=<NAME>`::
-Name of the sandbox, defaults to "sandbox". Executables run within the same sandbox
-name will be run in the same container.
+`--join=<NAME>`::
+Join the named layer, creating it if it does not exist yet. Executables run
+within the same layer name will be run in the same container.
 
 `--new`::
-Create a new sandbox with an auto-generated timestamp name. This is useful for
-creating ephemeral sandboxes for one-off tasks. Cannot be used with --name or --last.
+Create a new layer with an auto-generated timestamp name. This is the default
+when you run a command or a shell, so every run starts with a fresh layer.
+Cannot be used with --join or --last.
 
 `--last`::
-Use the most recently created sandbox. This is useful for quickly returning to
-the last sandbox you were working in. Cannot be used with --name or --new.
+Use the newest layer created in the current directory, or else in the nearest
+parent directory that has layers. This is how you return to a layer, for
+example `devlayer --last bash`. It is the default for `status`, `diff`,
+`accept`, `reject`, and `stop`/`delete` without patterns, so those act on the
+layer you last started in this project. `config` also reports that layer when
+there is one. Cannot be used with --join or --new.
 
 `--storage-dir=<STORAGE_DIR>`::
-Base storage directory for all sandboxes. Defaults to `~/.sandboxes/`
+Base storage directory for all layers. Defaults to `~/.devlayer/`
 
 `--net[=host|none]`::
-Sets network access level. With no parameter this enables host networking. The
-default value is `none`, which disables network access. If you want to enable
-network access by default you can store net="host" in a config file.
+Sets network access level. The default is `host`, which shares your host
+network. Use `--net=none` (or `net="none"` in a config file) to disable network
+access. With host networking the D-Bus and systemd sockets are also bound into
+the layer by default; `--no-default-binds` turns them off.
+
+`--no-bind-cwd`::
+By default the directory you start a layer in is bound read-write into the
+layer, so changes there go straight to your host without having to
+accept/reject them, while the rest of the system stays protected by the layer.
+Use `--no-bind-cwd` (or `no_bind_cwd = true` in a config file, or
+`DEVLAYER_NO_BIND_CWD=true`) to keep that directory layered too.
+`devlayer` refuses to bind `/` this way; run it from a project directory or
+pass `--no-bind-cwd`.
++
+A layer remembers the directory it was created in and whether it was bound.
+Re-entering it later, from any directory and with or without
+`--no-bind-cwd`, keeps those original choices. Note that config files are
+still found by searching from your current directory, so joining a layer from
+a different project can load a different `.devlayer.toml`; if that changes its
+network, limits or binds, `devlayer` asks you to stop the layer first.
 
 `--bind[=<MOUNTS>]`::
-Specify directories or files to bind into the sandbox bypassing the sandbox
+Specify directories or files to bind into the layer bypassing the layer
 OverlayFS system. 
 Examples: 
-  * `--bind=.` bind the current directory into the sandbox so that changes made
-    will be reflected in the host system without having to accept/reject them.
-    The rest of the system will still be mounted in OverlayFS FS layers to
-    protect your system. 
-  * `--bind=data1:/data` to mount the relative `data1` directory into the sandbox as `/data`.
+  * `--bind=../shared` bind a sibling directory into the layer as well as the
+    current directory, which is bound by default.
+  * `--bind=data1:/data` to mount the relative `data1` directory into the layer as `/data`.
   * `--bind=my/protected/dir::ro` will mount the relative `my/protected/dir`
-    directory into the sandbox as read only.
-  * `SANDBOX_BIND="my/protected/dir::ro" sandbox` works as well.
-  * `SANDBOX_BIND="/dir1,/dir2" sandbox --bind=/dir3:/dir4:ro,/dir5` style combined mix and match bind mounting also works.
+    directory into the layer as read only.
+  * `DEVLAYER_BIND="my/protected/dir::ro" devlayer` works as well.
+  * `DEVLAYER_BIND="/dir1,/dir2" devlayer --bind=/dir3:/dir4:ro,/dir5` style combined mix and match bind mounting also works.
 
 `--mask[=<PATHS>]`::
 Mask paths by mounting tmpfs (for directories) or /dev/null (for files) to
 prevent access to sensitive data. This is useful for hiding configuration or
-credential directories from sandboxed processes.
+credential directories from processes in the layer.
 Examples:
-  * `--mask=~/.ssh` hides your SSH keys from the sandboxed process
+  * `--mask=~/.ssh` hides your SSH keys from processes in the layer
   * `--mask=/etc/passwd` masks the passwd file with /dev/null  
   * `--mask=~/.aws,~/.config/gcloud` masks multiple paths
-  * `SANDBOX_MASK="~/.ssh,~/.aws" sandbox` works as well
+  * `DEVLAYER_MASK="~/.ssh,~/.aws" devlayer` works as well
 
 `--no-default-binds`::
-Disable default system bind mounts (e.g., /dev/fuse, D-Bus sockets, user directories).
-This is useful when you want complete control over what gets mounted into the sandbox.
+Disable default system bind mounts: `/dev/fuse`, the D-Bus and systemd sockets
+(with host networking), and audio. This is useful when you want complete
+control over what gets mounted into the layer.
++
+Audio is on by default: the PipeWire and PulseAudio sockets from
+`$XDG_RUNTIME_DIR` and the ALSA devices in `/dev/snd` are bound into the layer.
+Note that this also allows programs in the layer to record from your
+microphone. Use `--no-default-binds` to turn audio off.
 
-`--audio`::
-Allow audio inside the sandbox by binding the PipeWire and PulseAudio sockets
-from `$XDG_RUNTIME_DIR` and the ALSA devices in `/dev/snd`. Audio is disabled
-by default because this also allows sandboxed programs to record from your
-microphone. Audio works with or without `--net`, and is not affected by
-`--no-default-binds`. To enable audio by default you can store `audio = true`
-in a config file, and `SANDBOX_AUDIO=false` will override that for a single
-run.
+`--no-default-llm-binds`::
+Disable the default binds of well-known AI tool config and state, so that
+logins, history and settings of tools you run in the layer are not shared with
+your host. By default the following paths in your home directory are bound into
+the layer when they exist: `.claude`, `.claude.json`, `.codex`, `.pi`,
+`.gemini`, `.qwen`, `.aider`, `.cursor`, `.config/opencode`,
+`.local/share/opencode`, `.config/goose`, `.continue`, `.codeium`,
+`.config/github-copilot`, `.factory`, `.config/crush` and `.local/share/crush`.
+This is independent of `--no-default-binds`. Other credentials such as SSH keys
+or GitHub tokens are never bound by default; add them with `--bind` if you want
+them.
 
 `--cpus=<CPUS>`::
-Limit how many CPUs the sandbox can use. Fractional values such as `1.5` are
+Limit how many CPUs the layer can use. Fractional values such as `1.5` are
 allowed. Negative values mean all but that many CPUs, so `--cpus=-2` on a 32
-CPU machine lets the sandbox use 30. This limits the total CPU time the
-sandbox gets, it does not pin it to specific CPUs, so tools like `nproc` will
+CPU machine lets the layer use 30. This limits the total CPU time the
+layer gets, it does not pin it to specific CPUs, so tools like `nproc` will
 still report every CPU.
 
 `--memory=<SIZE>`::
-Limit how much memory the sandbox can use, for example `512M` or `4G`.
-Suffixes are binary (`1K` is 1024 bytes). Swap is not available to a sandbox
-with a memory limit, and when the sandbox runs out of memory the kernel kills
+Limit how much memory the layer can use, for example `512M` or `4G`.
+Suffixes are binary (`1K` is 1024 bytes). Swap is not available to a layer
+with a memory limit, and when the layer runs out of memory the kernel kills
 its largest process.
 +
-Resource limits use cgroup v2 and apply to every process in the sandbox. They
-are set when the sandbox starts, so you need to stop the sandbox to change
+Resource limits use cgroup v2 and apply to every process in the layer. They
+are set when the layer starts, so you need to stop the layer to change
 them. Use `unlimited` to remove a limit set in a config file, for example
-`--cpus=unlimited` or `SANDBOX_MEMORY=unlimited`.
+`--cpus=unlimited` or `DEVLAYER_MEMORY=unlimited`.
 +
-A sandbox started inside another sandbox can't set up limits of its own.
-Instead it warns and shares the limits of the sandbox it's running in. Limits
-may not be available at all when `sandbox` is run inside a container.
+A layer started inside another layer can't set up limits of its own.
+Instead it warns and shares the limits of the layer it's running in. Limits
+may not be available at all when `devlayer` is run inside a container.
 
 `--json`::
-Formats action output as a JSON blob. Does nothing for sandboxed commands
+Formats action output as a JSON blob. Does nothing for layered commands
 
 `--no-config`::
 Do not load config files. Environment variables will still be used.
@@ -248,39 +293,45 @@ Print help
 `-V, --version`::
 Print version
 
-== Sandboxed Commands
+== Commands
 
 The CLI argument parser will treat anything after the `[OPTIONS]` as either an
-action (listed above), or a command to run in the sandbox. Running a command
-will implicitly start the sandbox if it isn't running already. 
+action (listed above), or a command to run in the layer. Running a command
+will implicitly start the layer if it isn't running already. 
+
+A layer keeps running for as long as anything is running in it, including
+processes left running in the background. About a second after the last
+process in it exits, the layer stops by itself: its filesystems are unmounted,
+but its changes are kept, so you can still `status`, `diff`, `accept` or
+`reject` them, and running another command in the layer starts it again.
 
 
-After the `[OPTIONS]`, provided you're not running an action, `sandbox` 
+After the `[OPTIONS]`, provided you're not running an action, `devlayer` 
 will execute whatever command you provide, along with all subsequent arguments,
-in a sandboxed environment.
+inside a layer.
 
 If you want to run a command that happens to have the same name as an action,
 you can use the `--` flag to separate the command from the action arguments.
 For example:
 
 ```
- sandbox -- diff <path> <path>
+ devlayer -- diff <path> <path>
 ```
 
 
 
 == Config Files
 
-When invoked `sandbox` will look for files named `.sandbox.conf` and `.sandbox.toml` in your current directory and every ancestor directory up to you home directory (or / if invoked outside of a user's home directory), as well as in `~/.config/sandbox/config.(conf|toml)`, and finally `/etc/sandbox.(conf|toml)`, with more specific files overriding less specific ones.
+When invoked `devlayer` will look for files named `.devlayer.conf` and `.devlayer.toml` in your current directory and every ancestor directory up to you home directory (or / if invoked outside of a user's home directory), as well as in `~/.config/devlayer/config.(conf|toml)`, and finally `/etc/devlayer.(conf|toml)`, with more specific files overriding less specific ones.
 
 These config files can set most of the CLI options:
 
 ```
-  # Name of the sandbox
-  name="my-sandbox"
+  # Name of the layer to join (like --join)
+  join="my-layer"
 
-  # Path to the directory where the sandbox will store its data
-  storage_dir="/path/to/sandbox/storage"
+  # Path to the directory where the layer will store its data
+  storage_dir="/path/to/devlayer/storage"
 
   # "none" or "host"
   net="none"
@@ -288,7 +339,7 @@ These config files can set most of the CLI options:
   # "trace", "debug", "info", "warn", or "error"
   log_level="info"
   
-  # Bind mounts to apply to the sandbox
+  # Bind mounts to apply to the layer
   bind=[
     "/dir1",
     "/dir2::ro",
@@ -311,13 +362,13 @@ These config files can set most of the CLI options:
 You can also set most of the options with environment variables if you wish:
 
 ```
-  SANDBOX_NAME="my-sandbox"
-  SANDBOX_STORAGE_DIR="/path/to/sandbox/storage"
-  SANDBOX_NET="none"
-  SANDBOX_LOG_LEVEL="info"
-  SANDBOX_BIND="/my/dir"
-  SANDBOX_CPUS="-2"
-  SANDBOX_MEMORY="8G"
+  DEVLAYER_JOIN="my-layer"
+  DEVLAYER_STORAGE_DIR="/path/to/devlayer/storage"
+  DEVLAYER_NET="none"
+  DEVLAYER_LOG_LEVEL="info"
+  DEVLAYER_BIND="/my/dir"
+  DEVLAYER_CPUS="-2"
+  DEVLAYER_MEMORY="8G"
 
 ```
 
@@ -338,45 +389,45 @@ the same target within a single source are an error.
 Despite our test suite achieving a high degree of code coverage, this is still a
 fairly new project so please expect well covered bugs, security issues, and
 rough edges. Please report any issues you run into to the issue tracker:
-https://github.com/anoek/sandbox/issues
+https://github.com/anoek/devlayer/issues
 
-=== Changing files in both the host system and the sandbox
+=== Changing files in both the host system and the layer
 
-`sandbox` uses OverlayFS to manage tracking of file changes and allow
-applications to operate within the sandboxed environment seeing those file
+`devlayer` uses OverlayFS to manage tracking of file changes and allow
+applications to operate within the layered environment seeing those file
 changes.
 
 The safe and supported way to operate with OverlayFS file systems is to
 avoid making any changes to either to the "lower" file system (
 your host filesystem), or to the "upper" file system (the changes that
-have been made in the sandbox.) In this regard, the safest way to work
-with a sandbox is to start your sandbox, do whatever you want to do within
-your sandbox, stop the sandbox, and then accept or reject your changes.
+have been made in the layer.) In this regard, the safest way to work
+with a layer is to start your layer, do whatever you want to do within
+your layer, stop the layer, and then accept or reject your changes.
 
 That said it is often convenient to ignore this and make changes to the
 files on the host system, or to do things like accept or reject changes in
-a running sandbox (which makes changes to the "upper" file system). In practice
+a running layer (which makes changes to the "upper" file system). In practice
 this generally works as expected, the primary risk you run
-is seeing stale or cached data within the sandbox if you choose to do this.
-If you do run into visible problems, you may find running `sandbox sync` 
+is seeing stale or cached data within the layer if you choose to do this.
+If you do run into visible problems, you may find running `devlayer sync` 
 will resolve your issues. If you would like to accept or reject changes from the
-sandbox without first stopping the sandbox, `sandbox` will happily oblige the
+layer without first stopping the layer, `devlayer` will happily oblige the
 request, but be aware that technically this is not supported by OverlayFS. These
-operations implicitly perform the same actions as `sandbox sync` after their
+operations implicitly perform the same actions as `devlayer sync` after their
 work, so there is no need to call sync again after accepting or rejecting
-changes from the sandbox.
+changes from the layer.
 
-=== Moving directories out from under a sandbox
+=== Moving directories out from under a layer
 
 Moving directories around in your host system may be problematic in a running
-sandbox, particularly if the sandbox has also moved a moved directory or made
+layer, particularly if the layer has also moved a moved directory or made
 changes within a directory. Although nothing should explode, it's easy to run
-into read errors and other file errors within your sandbox if you do this, so
+into read errors and other file errors within your layer if you do this, so
 you should probably avoid doing such things.
 
 === Partial accepts that depend on other non-accepted things
 
-In a sandbox, if you move or create a directory, then make a file change in
+In a layer, if you move or create a directory, then make a file change in
 said directory, then try to accept just that file, you will run into an error.
 Making some rather complicated moves and trying to only accept some of them may
 result in an accept erroring out in the middle and leaving a mess for you to clean

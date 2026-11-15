@@ -7,34 +7,34 @@
 
 == Shell completion
 
-You can enable shell completion for the `sandbox` command by adding the
+You can enable shell completion for the `devlayer` command by adding the
 following snippets to the appropriate shell configuration files, or
 if you're packaging the shell completion and both will be updated together
 you can expand the shell scripts to avoid the runtime execution of the
-`sandbox` binary to generate the completion scripts.
+`devlayer` binary to generate the completion scripts.
 
 
 ### bash
 
 ```bash
-source <(COMPLETE=bash sandbox)
+source <(COMPLETE=bash devlayer)
 ```
 
 ### zsh
 
 ```bash
-source <(COMPLETE=zsh sandbox)
+source <(COMPLETE=zsh devlayer)
 ```
 
 ### fish
 
 ```sh
-source (COMPLETE=fish sandbox | psub)
+source (COMPLETE=fish devlayer | psub)
 ```
 
 ### elvish
 
 ```sh
-eval (E:COMPLETE=elvish sandbox | slurp)
+eval (E:COMPLETE=elvish devlayer | slurp)
 ```
 

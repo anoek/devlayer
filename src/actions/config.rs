@@ -16,11 +16,13 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
             "bind",
             "mask",
             "no_default_binds",
-            "audio",
+            "no_default_llm_binds",
+            "bind_cwd",
+            "created_in",
             "cpus",
             "memory",
             "storage_dir",
-            "sandbox_dir",
+            "layer_dir",
             "upper_cwd",
             "overlay_cwd",
             "ignored",
@@ -48,7 +50,8 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
         .join(",");
 
     let no_default_binds_str = format!("{}", config.no_default_binds);
-    let audio_str = format!("{}", config.audio);
+    let no_default_llm_binds_str = format!("{}", config.no_default_llm_binds);
+    let bind_cwd_str = format!("{}", config.origin.bind_cwd);
     let cpus_str = config
         .cpus
         .map_or("unlimited".to_string(), |cpus| cpus.to_string());
@@ -68,10 +71,9 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
                 "storage_dir",
                 config.storage_dir.to_str().unwrap_or("<error>"),
             ),
-            "sandbox_dir" | "sandbox-dir" => (
-                "sandbox_dir",
-                config.sandbox_dir.to_str().unwrap_or("<error>"),
-            ),
+            "layer_dir" | "layer-dir" => {
+                ("layer_dir", config.layer_dir.to_str().unwrap_or("<error>"))
+            }
             "upper_cwd" | "upper-cwd" => {
                 ("upper_cwd", config.upper_cwd.to_str().unwrap_or("<error>"))
             }
@@ -85,7 +87,14 @@ pub fn config(config: &Config, keys: Option<Vec<String>>) -> Result<()> {
             "no_default_binds" => {
                 ("no_default_binds", no_default_binds_str.as_str())
             }
-            "audio" => ("audio", audio_str.as_str()),
+            "no_default_llm_binds" => {
+                ("no_default_llm_binds", no_default_llm_binds_str.as_str())
+            }
+            "bind_cwd" => ("bind_cwd", bind_cwd_str.as_str()),
+            "created_in" => (
+                "created_in",
+                config.origin.created_in.to_str().unwrap_or("<error>"),
+            ),
             "cpus" => ("cpus", cpus_str.as_str()),
             "memory" => ("memory", memory_str.as_str()),
             "name" => ("name", config.name.as_str()),

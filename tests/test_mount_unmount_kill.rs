@@ -7,58 +7,58 @@ use std::ffi::CStr;
 use std::path::Path;
 
 #[rstest]
-fn test_fail_to_read_mounts(mut sandbox: SandboxManager) -> Result<()> {
-    assert!(sandbox.exfail(&["env"], "TEST_SYSTEM_MOUNTS_NULL", "1"));
-    assert!(sandbox.pass(&["true"]));
-    assert!(sandbox.exfail(&["stop"], "TEST_SYSTEM_MOUNTS_NULL", "1"));
-    assert!(sandbox.pass(&["stop"]));
+fn test_fail_to_read_mounts(mut layer: LayerManager) -> Result<()> {
+    assert!(layer.exfail(&["env"], "TEST_SYSTEM_MOUNTS_NULL", "1"));
+    layer.hold()?;
+    assert!(layer.exfail(&["stop"], "TEST_SYSTEM_MOUNTS_NULL", "1"));
+    assert!(layer.pass(&["stop"]));
     Ok(())
 }
 
 #[rstest]
-fn test_no_mounts_found(mut sandbox: SandboxManager) -> Result<()> {
-    assert!(sandbox.exfail(&["env"], "TEST_NO_MOUNTS_FOUND", "1"));
-    assert!(sandbox.pass(&["true"]));
-    assert!(sandbox.epass(&["stop"], "TEST_NO_MOUNTS_FOUND", "1"));
-    assert!(sandbox.last_stderr.contains("No mounts found for sandbox"));
+fn test_no_mounts_found(mut layer: LayerManager) -> Result<()> {
+    assert!(layer.exfail(&["env"], "TEST_NO_MOUNTS_FOUND", "1"));
+    layer.hold()?;
+    assert!(layer.epass(&["stop"], "TEST_NO_MOUNTS_FOUND", "1"));
+    assert!(layer.last_stderr.contains("No mounts found for layer"));
     Ok(())
 }
 
 #[rstest]
-fn test_unmount_race(mut sandbox: SandboxManager) -> Result<()> {
-    assert!(sandbox.pass(&["true"]));
-    assert!(sandbox.epass(&["stop"], "TEST_UNMOUNT_RACE", "1"));
-    assert!(sandbox.last_stderr.contains("Failed to unmount"));
+fn test_unmount_race(mut layer: LayerManager) -> Result<()> {
+    layer.hold()?;
+    assert!(layer.epass(&["stop"], "TEST_UNMOUNT_RACE", "1"));
+    assert!(layer.last_stderr.contains("Failed to unmount"));
     Ok(())
 }
 
 #[rstest]
-fn test_kill_not_running(mut sandbox: SandboxManager) -> Result<()> {
-    assert!(sandbox.pass(&["stop"]));
-    assert!(sandbox.last_stderr.contains("doesn't appear to be running"));
+fn test_kill_not_running(mut layer: LayerManager) -> Result<()> {
+    assert!(layer.pass(&["stop"]));
+    assert!(layer.last_stderr.contains("doesn't appear to be running"));
 
-    assert!(sandbox.pass(&["true"]));
-    assert!(sandbox.epass(&["stop"], "TEST_STOP_RACE", "1"));
-    assert!(sandbox.last_stderr.contains("already gone"));
+    layer.hold()?;
+    assert!(layer.epass(&["stop"], "TEST_STOP_RACE", "1"));
+    assert!(layer.last_stderr.contains("already gone"));
 
-    assert!(sandbox.pass(&["true"]));
-    assert!(sandbox.epass(&["stop"], "TEST_STOP_RACE2", "1"));
-    assert!(sandbox.last_stderr.contains("Failed to kill process"));
+    layer.hold()?;
+    assert!(layer.epass(&["stop"], "TEST_STOP_RACE2", "1"));
+    assert!(layer.last_stderr.contains("Failed to kill process"));
 
-    assert!(sandbox.pass(&["true"]));
-    assert!(sandbox.epass(&["stop"], "TEST_STOP_RACE3", "1"));
+    layer.hold()?;
+    assert!(layer.epass(&["stop"], "TEST_STOP_RACE3", "1"));
     Ok(())
 }
 
 #[rstest]
-fn test_kill_unmounts(mut sandbox: SandboxManager) -> Result<()> {
-    assert!(sandbox.pass(&["true"]));
+fn test_kill_unmounts(mut layer: LayerManager) -> Result<()> {
+    layer.hold()?;
 
-    let mounts = get_mounts(&sandbox.dir()?);
+    let mounts = get_mounts(&layer.dir()?);
     assert!(!mounts.is_empty());
 
-    assert!(sandbox.pass(&["stop"]));
-    let mounts = get_mounts(&sandbox.dir()?);
+    assert!(layer.pass(&["stop"]));
+    let mounts = get_mounts(&layer.dir()?);
     assert!(mounts.is_empty());
 
     Ok(())

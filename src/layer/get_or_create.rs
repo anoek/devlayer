@@ -1,17 +1,18 @@
 use super::cgroup::remove_cgroup;
 use super::mount_overlays::MountHash;
+use super::supervisor;
+use crate::config::resolve::generate_timestamp_name;
 use crate::config::{BindMount, BindMountOptions, Config, Network};
-use crate::sandbox::Sandbox;
+use crate::layer::Layer;
 #[cfg(feature = "coverage")]
 use crate::util::CLONE_FS;
-use crate::util::Lock;
-use crate::util::get_running_sandbox_pid;
-use crate::util::get_sandbox_pid_path;
 use crate::util::{
     CLONE_INTO_CGROUP, CLONE_NEWCGROUP, CLONE_NEWIPC, CLONE_NEWNET,
     CLONE_NEWNS, CLONE_NEWPID, CLONE_NEWUTS, Clone3Args,
     check_path_for_mount_option_compatibility, clone3, mkdir, mount,
 };
+use crate::util::{Lock, SharedLock, write_no_follow};
+use crate::util::{get_running_layer_pid_or_remove, layer_pid_file_contents};
 use anyhow::Context;
 use anyhow::{Result, anyhow};
 use log::{error, trace};
@@ -20,11 +21,16 @@ use nix::sys::stat::fchmodat;
 use nix::{
     mount::MsFlags,
     mount::{MntFlags, umount2},
+    sys::signal::Signal,
     sys::stat::{Mode, SFlag, makedev, mknod},
-    unistd::{Gid, Pid, Uid, close, pipe, pivot_root, setsid},
+    sys::wait::{WaitPidFlag, WaitStatus, waitpid},
+    unistd::{
+        ForkResult, Gid, Pid, Uid, close, fork, pipe, pivot_root, setsid,
+    },
 };
 #[cfg(feature = "coverage")]
 use std::ffi::CString;
+use std::io::Read;
 use std::os::{
     fd::{AsRawFd, OwnedFd},
     unix::fs::{MetadataExt, symlink},
@@ -36,27 +42,29 @@ use uuid::Uuid;
 unsafe extern "C" {
     fn __llvm_profile_set_filename(filename: *const i8);
     fn __llvm_profile_dump();
+    fn __llvm_profile_reset_counters();
 }
 
 const TMPFS_SIZE: i32 = 64 * 1024 * 1024; // 64MB, because that's what docker does
 
-impl Sandbox {
+impl Layer {
     pub fn from_location(
-        sandboxes_storage_dir: &Path,
-        sandbox_name: &str,
+        layers_storage_dir: &Path,
+        layer_name: &str,
         uid: Uid,
         gid: Gid,
-    ) -> Sandbox {
+    ) -> Layer {
         let root_suffix = data_encoding::BASE32_NOPAD.encode(b"/");
-        let sandbox_base_dir = sandboxes_storage_dir.join(sandbox_name);
-        let work_base = sandbox_base_dir.join("work");
-        let upper_base = sandbox_base_dir.join("upper");
-        let overlay_base = sandbox_base_dir.join("overlay");
-        let data_base = sandbox_base_dir.join("data");
+        let layer_base_dir = layers_storage_dir.join(layer_name);
+        let work_base = layer_base_dir.join("work");
+        let upper_base = layer_base_dir.join("upper");
+        let overlay_base = layer_base_dir.join("overlay");
+        let data_base = layer_base_dir.join("data");
 
-        Sandbox {
-            name: sandbox_name.to_string(),
-            base: sandbox_base_dir.clone(),
+        Layer {
+            name: layer_name.to_string(),
+            storage_dir: layers_storage_dir.to_path_buf(),
+            base: layer_base_dir.clone(),
             work_base: work_base.clone(),
             upper_base: upper_base.clone(),
             overlay_base: overlay_base.clone(),
@@ -68,83 +76,105 @@ impl Sandbox {
         }
     }
 
+    /// The bind mount of the layer's data directory, which every layer has
+    fn data_bind_mount(&self) -> BindMount {
+        BindMount {
+            argument: "data".to_string(),
+            source: self.data_storage_dir.clone(),
+            target: self.data_storage_dir.clone(),
+            options: BindMountOptions::ReadWrite,
+        }
+    }
+
     pub fn get(
-        sandboxes_storage_dir: &Path,
-        sandbox_name: &str,
+        layers_storage_dir: &Path,
+        layer_name: &str,
         uid: Uid,
         gid: Gid,
         lock: Option<Box<Lock>>,
-    ) -> Result<(Option<Sandbox>, Box<Lock>)> {
+    ) -> Result<(Option<Layer>, Box<Lock>)> {
         /* Lock so we don't have multiple processes trying to get at the same time */
         let lock = match lock {
             Some(l) => l,
-            None => Lock::sandbox(sandboxes_storage_dir, sandbox_name)
-                .context(format!("failed to lock sandbox: {}", sandbox_name))?,
+            None => Lock::layer(layers_storage_dir, layer_name)
+                .context(format!("failed to lock layer: {}", layer_name))?,
         };
 
-        let sandbox_base_dir = sandboxes_storage_dir.join(sandbox_name);
-        if !sandbox_base_dir.exists() {
+        let layer_base_dir = layers_storage_dir.join(layer_name);
+        if !layer_base_dir.exists() {
             return Ok((None, lock));
         }
 
-        /* If we have an existing sandbox, return it */
-        if let Some(pid) =
-            get_running_sandbox_pid(sandboxes_storage_dir, sandbox_name)
-        {
-            let mut sandbox = Sandbox::from_location(
-                sandboxes_storage_dir,
-                sandbox_name,
-                uid,
-                gid,
-            );
-            sandbox.pid = pid;
-            return Ok((Some(sandbox), lock));
+        /* If we have an existing layer, return it */
+        if let Some(pid) = get_running_layer_pid_or_remove(
+            &lock,
+            layers_storage_dir,
+            layer_name,
+        ) {
+            let mut layer =
+                Layer::from_location(layers_storage_dir, layer_name, uid, gid);
+            layer.pid = pid;
+            return Ok((Some(layer), lock));
         }
 
         Ok((None, lock))
     }
 
+    /**
+     * Returns the layer, starting it if it isn't running, along with the
+     * layer lock, which is held until the caller drops it.
+     */
     pub fn get_or_create(
         config: &Config,
         uid: Uid,
         gid: Gid,
-    ) -> Result<Sandbox> {
+    ) -> Result<(Layer, Box<Lock>)> {
         let storage_dir = &config.storage_dir;
-        let sandbox_name = &config.name;
         /* Ensure that the storage directory exists */
         mkdir(storage_dir, uid, gid).context(format!(
             "failed to create storage directory: {}",
             storage_dir.display()
         ))?;
 
-        /* First lock so we don't have multiple processes trying to get_or_create at the same time */
-        let lock = Lock::sandbox(storage_dir, sandbox_name)
-            .context(format!("failed to lock sandbox: {}", sandbox_name))?;
+        /* First lock so we don't have multiple processes trying to
+         * get_or_create at the same time. A name generated for a new layer
+         * is ours once we hold its lock and no layer by that name exists,
+         * since we create the layer's directory before letting go of the
+         * lock. If one does exist, another launch generated the same name
+         * first, so we generate another. */
+        let mut layer_name = config.name.clone();
+        let lock = loop {
+            let lock = Lock::layer(storage_dir, &layer_name)
+                .context(format!("failed to lock layer: {}", layer_name))?;
+            if !config.new_layer || !storage_dir.join(&layer_name).exists() {
+                break lock;
+            }
+            trace!("Layer '{}' was created meanwhile", layer_name);
+            layer_name = generate_timestamp_name(storage_dir);
+        };
+        let layer_name = &layer_name;
 
-        /* If we have an existing sandbox, return it */
-        let (sandbox, _lock) =
-            Sandbox::get(storage_dir, sandbox_name, uid, gid, Some(lock))?;
+        /* If we have an existing layer, return it */
+        let (layer, lock) =
+            Layer::get(storage_dir, layer_name, uid, gid, Some(lock))?;
 
-        if let Some(sandbox) = sandbox {
-            // Validate that the existing sandbox settings are compatible with current config
-            let settings_path = sandbox.settings_path();
+        if let Some(layer) = layer {
+            // Validate that the existing layer settings are compatible with current config
+            let settings_path = layer.settings_path();
             if settings_path.exists() {
-                match crate::sandbox::SandboxSettings::load_from_file(
+                match crate::layer::LayerSettings::load_from_file(
                     &settings_path,
                 ) {
                     Ok(existing_settings) => {
                         // Determine what the current mounts should be
-                        let expected_mounts = sandbox.determine_mounts(config)
+                        let expected_mounts = layer.determine_mounts(config)
                             .context("Failed to determine expected mounts for validation")?;
 
                         // Create a config that includes the implicit data bind mount for validation
                         let mut validation_config = config.clone();
-                        validation_config.bind_mounts.push(BindMount {
-                            argument: "data".to_string(),
-                            source: sandbox.data_storage_dir.clone(),
-                            target: sandbox.data_storage_dir.clone(),
-                            options: BindMountOptions::ReadWrite,
-                        });
+                        validation_config
+                            .bind_mounts
+                            .push(layer.data_bind_mount());
 
                         // Validate settings compatibility
                         existing_settings.validate_against_config(
@@ -154,26 +184,25 @@ impl Sandbox {
                     }
                     Err(e) => {
                         return Err(anyhow!(
-                            "Failed to load existing sandbox settings from {}: {}. The sandbox may be corrupted.",
+                            "Failed to load existing layer settings from {}: {}. The layer may be corrupted.",
                             settings_path.display(),
                             e
                         ));
                     }
                 }
             }
-            return Ok(sandbox);
+            return Ok((layer, lock));
         }
 
         /*
-         * Otherwise, create a new sandbox
+         * Otherwise, create a new layer
          */
-        let mut sandbox =
-            Sandbox::from_location(storage_dir, sandbox_name, uid, gid);
+        let mut layer = Layer::from_location(storage_dir, layer_name, uid, gid);
 
         trace!(
-            "Creating new sandbox '{}': {}",
-            sandbox_name,
-            sandbox.base.display()
+            "Creating new layer '{}': {}",
+            layer_name,
+            layer.base.display()
         );
 
         /* Sanity check our storage path*/
@@ -184,62 +213,120 @@ impl Sandbox {
             ),
         )?;
 
+        if config.origin.bind_cwd && config.origin.created_in == Path::new("/")
+        {
+            return Err(anyhow!(
+                "Refusing to bind / into the layer; run from a project directory or pass --no-bind-cwd"
+            ));
+        }
+        if config.cwd_bind_is_home {
+            return Err(anyhow!(
+                "Refusing to bind your home directory into the layer, where anything run could change all of it; run from a project directory, pass --no-bind-cwd, or pass --bind=. to bind it anyway"
+            ));
+        }
+
         let mut config = config.clone();
-        config.bind_mounts.push(BindMount {
-            argument: "data".to_string(),
-            source: sandbox.data_storage_dir.clone(),
-            target: sandbox.data_storage_dir.clone(),
-            options: BindMountOptions::ReadWrite,
-        });
+        config.bind_mounts.push(layer.data_bind_mount());
 
         /* Create a cgroup to enforce any resource limits. We do this first
          * so we fail before mounting anything if limits aren't available. */
-        let cgroup = sandbox.create_cgroup_or_share_outer(&config)?;
+        let cgroup = layer.create_cgroup_or_share_outer(&config)?;
 
-        trace!("Mounting sandbox");
-        let started = sandbox
+        trace!("Mounting layer");
+        let started = layer
             .mount_overlays(&config)
-            .context(format!("failed to mount sandbox: {}", sandbox_name))
+            .context(format!("failed to mount layer: {}", layer_name))
             .and_then(|overlay_mounts| {
-                /* Create PID 1 for our sandbox */
-                sandbox
-                    .start_sandbox(
-                        &config,
-                        &get_sandbox_pid_path(storage_dir, sandbox_name),
-                        &overlay_mounts,
-                        cgroup.as_ref(),
-                    )
-                    .map_err(|e| anyhow!("Failed to start sandbox: {}", e))
+                /* Create PID 1 for our layer */
+                layer
+                    .start_layer(&config, &overlay_mounts, cgroup.as_ref())
+                    .map_err(|e| anyhow!("Failed to start layer: {}", e))
             });
 
-        sandbox.pid = match started {
+        layer.pid = match started {
             Ok(pid) => pid,
             Err(e) => {
                 if cgroup.is_some() {
-                    remove_cgroup(&sandbox.cgroup_path());
+                    remove_cgroup(&layer.cgroup_path());
                 }
                 return Err(e);
             }
         };
 
-        Ok(sandbox)
+        /* Record where the layer was created. A restarted layer was given
+         * the origin recorded when it was first started. */
+        config.origin.save(&layer.base)?;
+
+        Ok((layer, lock))
     }
 
     /**
      * This launches a new process with new namespaces. The process will go to sleep
      * but stick around to allow future processes to be launched in the same namespaces.
+     *
+     * PID 1 is started by a supervisor process we fork first, which waits for
+     * PID 1 to exit and then cleans up after the layer. The supervisor sends
+     * us PID 1's pid once PID 1 is ready, or exits without sending anything
+     * if PID 1 fails to start.
      */
-    fn start_sandbox(
+    fn start_layer(
         &self,
         config: &Config,
-        pid_file: &PathBuf,
         overlay_mounts: &Vec<MountHash>,
         cgroup: Option<&OwnedFd>,
     ) -> Result<Pid> {
-        // create a pipe between ourselves and the main sandbox process so the main sandbox process can
+        let (read_fd, write_fd) =
+            pipe().context("failed to create pipe for layer supervisor")?;
+
+        match unsafe { fork() }.context("failed to fork layer supervisor")? {
+            ForkResult::Parent { child } => {
+                drop(write_fd);
+                let mut pid = [0; 4];
+                if std::fs::File::from(read_fd).read_exact(&mut pid).is_err() {
+                    let _ = waitpid(child, None);
+                    return Err(anyhow!("Failed to setup layer"));
+                }
+                Ok(Pid::from_raw(i32::from_le_bytes(pid)))
+            }
+            ForkResult::Child => {
+                drop(read_fd);
+                match self.start_pid1(config, overlay_mounts, cgroup) {
+                    Ok((pid, lock)) => {
+                        let _ = nix::unistd::write(
+                            &write_fd,
+                            &pid.as_raw().to_le_bytes(),
+                        );
+                        supervisor::detach(&lock);
+                        supervisor::supervise(self, pid, cgroup.is_some(), lock)
+                    }
+                    Err(e) => {
+                        error!("Failed to start layer: {:#}", e);
+                        std::process::exit(1)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Runs in the supervisor: starts PID 1, records its pid, and waits until
+     * it reports that the layer is set up. Returns PID 1's pid and the
+     * handle on the layer lock that we share with it.
+     */
+    fn start_pid1(
+        &self,
+        config: &Config,
+        overlay_mounts: &Vec<MountHash>,
+        cgroup: Option<&OwnedFd>,
+    ) -> Result<(Pid, SharedLock)> {
+        supervisor::become_supervisor()?;
+
+        let lock = SharedLock::open(&config.storage_dir, &self.name)?;
+
+        // create a pipe between ourselves and the main layer process so the main layer process can
         // let us know when it's done setting up the namespaces
         let (read_fd, write_fd) =
-            pipe().context("failed to create pipe for sandbox")?;
+            pipe().context("failed to create pipe for layer")?;
 
         let clone_args = Clone3Args {
             flags: CLONE_NEWNS
@@ -257,12 +344,14 @@ impl Sandbox {
                 // Starting in our cgroup also makes it the root of our cgroup namespace
                 | cgroup.map_or(0, |_| CLONE_INTO_CGROUP),
             cgroup: cgroup.map_or(0, |fd| fd.as_raw_fd() as u64),
+            // Lets the supervisor waitpid() on PID 1
+            exit_signal: libc::SIGCHLD as u64,
             ..Default::default()
         };
 
         #[cfg(feature = "coverage")]
         let clone_args =
-            if std::env::var_os("TEST_START_SANDBOX_FAILURE").is_some() {
+            if std::env::var_os("TEST_START_LAYER_FAILURE").is_some() {
                 let mut new_args = clone_args.clone();
                 new_args.flags |= CLONE_FS; // invalid flag combination with NEWNS
                 new_args
@@ -270,33 +359,40 @@ impl Sandbox {
                 clone_args
             };
 
-        let pid = clone3(&clone_args)
-            .context("clone3 call to start sandbox failed")?;
+        let pid =
+            clone3(&clone_args).context("clone3 call to start layer failed")?;
 
         if pid.as_raw() > 0 {
             // We are the parent process
             drop(write_fd);
 
-            // write pid to pid file
-            std::fs::write(pid_file, pid.to_string()).context(format!(
-                "failed to write pid to pid file: {}",
-                pid_file.display()
-            ))?;
+            // write pid to pid file, or else don't leave PID 1 behind
+            let pid_file = self.pid_path();
+            if let Err(e) =
+                write_no_follow(&pid_file, layer_pid_file_contents(pid))
+            {
+                let _ = nix::sys::signal::kill(pid, Signal::SIGKILL);
+                let _ = waitpid(pid, None);
+                return Err(e).context(format!(
+                    "failed to write pid to pid file: {}",
+                    pid_file.display()
+                ));
+            }
 
             // Wait for the child process to finish mounting procfs and doing whatever
             // setup stuff it needs to do. Once done, it sends a byte over the pipe, that's
             // our signal that the namespaces are ready for use.
-            let mut buffer = [0; 1];
-            nix::unistd::read(read_fd.as_raw_fd(), &mut buffer)
-                .context("failed to read from sandbox ready pipe")?;
+            let mut buffer = [1; 1];
+            let _ = nix::unistd::read(read_fd.as_raw_fd(), &mut buffer);
 
-            if buffer[0] == 1 {
-                return Err(anyhow!("Failed to setup sandbox"));
+            if buffer[0] != 0 {
+                // Wait for PID 1 to exit so it's out of the layer's cgroup
+                // before the caller removes it
+                let _ = waitpid(pid, None);
+                return Err(anyhow!("Failed to setup layer"));
             }
 
-            drop(read_fd);
-
-            Ok(pid)
+            Ok((pid, lock))
         } else {
             // We are the child process. We should never return from this branch.
 
@@ -306,35 +402,37 @@ impl Sandbox {
 
             // Normal operation is that this doesn't return.
             let _ = self
-                .setup_sandbox_and_sleep_forever(
-                    config,
-                    &write_fd,
-                    overlay_mounts,
-                )
+                .setup_layer_and_wait(config, &write_fd, overlay_mounts, &lock)
                 .map_err(|e| {
-                    error!("Failed to setup sandbox: {}", e);
+                    error!("Failed to setup layer: {}", e);
                     e
                 });
 
             // If we're here, an error occurred and we'll exit
-            nix::unistd::write(&write_fd, &[1])
-                .context("failed to write to sandbox ready pipe")?;
-
+            let _ = nix::unistd::write(&write_fd, &[1]);
             std::process::exit(1);
         }
     }
 
-    /* After forking via clone3, this is function gets called to finish setting up the sandbox.
+    /* After forking via clone3, this is function gets called to finish setting up the layer.
      * namespaces. It should never return, if it does it's an error. */
-    fn setup_sandbox_and_sleep_forever(
+    fn setup_layer_and_wait(
         &self,
         config: &Config,
         write_fd: &OwnedFd,
         mounts: &Vec<MountHash>,
+        lock: &SharedLock,
     ) -> Result<()> {
-        trace!("Setting up sandbox root process");
+        trace!("Setting up layer root process");
 
-        /* Normalize credentials and dumpable state for pidfd-based setns().
+        /* Of the file descriptors we inherited, keep only stdio, the pipe to
+         * our supervisor and our handle on the layer lock. Notably not the
+         * caller's lock on the layer: if the caller died holding it, the
+         * lock would stay held for as long as we keep it open, and nothing
+         * could get at the layer, nor could we shut it down. */
+        supervisor::close_fds_except(&[write_fd.as_raw_fd(), lock.as_raw_fd()]);
+
+        /* Restore our dumpable state for pidfd-based setns().
          *
          * When another process uses pidfd_open + setns() to join our
          * namespaces, the kernel's ptrace_may_access() check verifies:
@@ -342,23 +440,10 @@ impl Sandbox {
          *      and gid/egid/sgid, or the caller has CAP_SYS_PTRACE.
          *   2. Our dumpable flag == SUID_DUMP_USER (1).
          *
-         * When launched via a setuid binary, we inherit ruid!=0 from the
-         * caller and dumpable=suid_dumpable (typically 2). Both cause
-         * ptrace_may_access to fail when CAP_SYS_PTRACE is unavailable.
-         *
-         * Fix: set all UIDs/GIDs to root and restore dumpable to 1. */
-        nix::unistd::setresuid(
-            Uid::from_raw(0),
-            Uid::from_raw(0),
-            Uid::from_raw(0),
-        )
-        .context("failed to normalize sandbox PID 1 UIDs to root")?;
-        nix::unistd::setresgid(
-            Gid::from_raw(0),
-            Gid::from_raw(0),
-            Gid::from_raw(0),
-        )
-        .context("failed to normalize sandbox PID 1 GIDs to root")?;
+         * Our supervisor already set all its UIDs/GIDs to root, which we
+         * inherited, but changing them left dumpable at suid_dumpable
+         * (typically 2), which fails check 2 when CAP_SYS_PTRACE is
+         * unavailable. */
         unsafe {
             libc::prctl(libc::PR_SET_DUMPABLE, 1);
         }
@@ -810,7 +895,7 @@ impl Sandbox {
             )?;
         }
 
-        /* Mask out certain things from /proc and /sys to help isolate the sandbox.
+        /* Mask out certain things from /proc and /sys to help isolate the layer.
          * These are based off of the things that docker masks out by default, see
          *
          * https://github.com/moby/moby/blob/master/oci/defaults.go
@@ -1019,14 +1104,14 @@ impl Sandbox {
         nix::unistd::sethostname(self.name.as_str())
             .context(format!("failed to set hostname: {}", self.name))?;
 
-        // send a byte over the pipe to signal that the sandbox is initialized and
+        // send a byte over the pipe to signal that the layer is initialized and
         // ready for use
         nix::unistd::write(write_fd, &[0])
-            .context(format!("failed to write to sandbox ready pipe"))?;
+            .context(format!("failed to write to layer ready pipe"))?;
         close(write_fd.as_raw_fd())
-            .context(format!("failed to close sandbox ready pipe"))?;
+            .context(format!("failed to close layer ready pipe"))?;
 
-        trace!("Sandbox setup complete");
+        trace!("Layer setup complete");
 
         /* Close all file descriptors so our test harness doesn't hang waiting for them to close
          * before returning a result. */
@@ -1037,38 +1122,84 @@ impl Sandbox {
         close(std::io::stdin().as_raw_fd())
             .context(format!("failed to close stdin"))?;
 
-        /* Exit on SIGTERM, with the signal number as our exit status. libc's
-         * exit has the C calling convention a signal handler needs, which
-         * std::process::exit doesn't. */
-        let exit: unsafe extern "C" fn(libc::c_int) -> ! = libc::exit;
+        /* Exit on SIGTERM, with the signal number as our exit status. Unlike
+         * exit, _exit is safe to call from a signal handler, and it has the C
+         * calling convention a handler needs, which std::process::exit
+         * doesn't. */
+        let exit: unsafe extern "C" fn(libc::c_int) -> ! = libc::_exit;
         unsafe {
             libc::signal(libc::SIGTERM, exit as libc::sighandler_t);
         }
 
-        // sleep forever, this process hangs around only to host the namespaces so other processes
-        // can join in.
-        let mut count = 0;
-        loop {
-            std::thread::sleep(std::time::Duration::from_millis(count));
-            /* Cheap hack to fill out coverage */
-            count += 1;
-            if count >= 2 {
-                count += 10000;
-                // Flush gcov coverage data before we spin forever
-                #[cfg(feature = "coverage")]
-                {
-                    let _ = nix::unistd::chdir(&cwd);
-
-                    unsafe {
-                        __llvm_profile_set_filename(
-                            CString::new(format!("coverage/profraw/setup_sandbox-{}-{}-%m.profraw", self.pid, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs()).as_str(),)
+        /* Write our coverage data now, as we may be killed rather than exit */
+        #[cfg(feature = "coverage")]
+        let dump_coverage = || {
+            let _ = nix::unistd::chdir(&cwd);
+            unsafe {
+                __llvm_profile_set_filename(
+                    CString::new(
+                        format!(
+                            "coverage/profraw/setup_layer-{}-{}-%m.profraw",
+                            self.pid,
+                            std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
                                 .unwrap()
-                                .as_ptr(),
-                        );
-                        __llvm_profile_dump();
-                    }
+                                .as_secs()
+                        )
+                        .as_str(),
+                    )
+                    .unwrap()
+                    .as_ptr(),
+                );
+                __llvm_profile_dump();
+                // A later dump is skipped unless the counters are reset,
+                // after which it writes what ran since (merged by %m)
+                __llvm_profile_reset_counters();
+            }
+        };
+        #[cfg(feature = "coverage")]
+        dump_coverage();
+
+        /* Host the namespaces for as long as anything runs in the layer.
+         * Once a second, reap processes orphaned in the layer, and exit once
+         * we're the only process left, which has our supervisor clean up.
+         * A command starting in the layer holds the layer lock until it's
+         * running in our pid namespace, so we only look while holding the
+         * lock, and exit holding it. */
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            while !matches!(
+                waitpid(Pid::from_raw(-1), Some(WaitPidFlag::WNOHANG)),
+                Ok(WaitStatus::StillAlive) | Err(_)
+            ) {}
+
+            if lock.try_lock() {
+                if only_process_in_layer() {
+                    trace!(
+                        "Nothing is running in layer '{}', exiting",
+                        self.name
+                    );
+                    #[cfg(feature = "coverage")]
+                    dump_coverage();
+                    std::process::exit(0);
                 }
+                lock.unlock();
             }
         }
     }
+}
+
+/// Whether we (PID 1) are the only process in our pid namespace, going by
+/// our layer's /proc
+fn only_process_in_layer() -> bool {
+    std::fs::read_dir("/proc").is_ok_and(|entries| {
+        entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name())
+            .filter(|name| {
+                name.to_str()
+                    .is_some_and(|n| n.bytes().all(|b| b.is_ascii_digit()))
+            })
+            .all(|name| name == "1")
+    })
 }

@@ -3,14 +3,14 @@ use log::{Level, LevelFilter, Log, Metadata, Record};
 use std::io::{self, Write};
 use std::sync::Mutex;
 
-pub struct SandboxLogger {
+pub struct DevlayerLogger {
     level: Mutex<LevelFilter>,
     output: Mutex<Box<dyn Write + Send>>,
     deferred: Mutex<Vec<(Level, ColoredString)>>,
     defer_output: Mutex<bool>,
 }
 
-impl SandboxLogger {
+impl DevlayerLogger {
     pub fn new(level: LevelFilter) -> &'static Self {
         Box::leak(Box::new(Self {
             level: Mutex::new(level),
@@ -54,7 +54,7 @@ impl SandboxLogger {
     }
 }
 
-impl Log for SandboxLogger {
+impl Log for DevlayerLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
         metadata.level() <= *self.level.lock().expect("Failed to lock level")
     }
@@ -127,8 +127,8 @@ mod tests {
         }
     }
 
-    fn logger(level: LevelFilter, captured: &Captured) -> SandboxLogger {
-        SandboxLogger {
+    fn logger(level: LevelFilter, captured: &Captured) -> DevlayerLogger {
+        DevlayerLogger {
             level: Mutex::new(level),
             output: Mutex::new(Box::new(captured.clone())),
             deferred: Mutex::new(Vec::new()),
@@ -136,7 +136,7 @@ mod tests {
         }
     }
 
-    fn log(logger: &SandboxLogger, level: Level, message: &str) {
+    fn log(logger: &DevlayerLogger, level: Level, message: &str) {
         logger.log(
             &Record::builder()
                 .level(level)

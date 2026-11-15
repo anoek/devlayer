@@ -1,22 +1,20 @@
-use std::path::PathBuf;
-
-use crate::{actions::rmdir_recursive, sandbox::Sandbox};
+use crate::{actions::rmdir_recursive, layer::Layer};
 use anyhow::{Context, Result};
 use log::{debug, trace};
 
-impl Sandbox {
+impl Layer {
     pub fn delete(&self) -> Result<()> {
-        self.stop().context("failed to stop sandbox")?;
-        self.unmount().context("failed to unmount sandbox")?;
+        self.stop().context("failed to stop layer")?;
+        self.unmount().context("failed to unmount layer")?;
 
-        trace!("Removing sandbox directory: {}", self.base.display());
+        trace!("Removing layer directory: {}", self.base.display());
         if self.base.exists() {
             rmdir_recursive(&self.base)?;
         } else {
-            debug!("Sandbox directory does not exist: {}", self.base.display());
+            debug!("Layer directory does not exist: {}", self.base.display());
         }
 
-        let lock_file = PathBuf::from(format!("{}.lock", self.base.display()));
+        let lock_file = self.lock_path();
         trace!("Cleaning up lock file: {}", lock_file.display());
         std::fs::remove_file(&lock_file).context(format!(
             "failed to remove lock file {}",
